@@ -1,0 +1,19 @@
+# .NET build output
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# OS
+.DS_Store
+
+# Test native binaries, see tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/UnityFileSystemApiLibraries/.gitkeep
+tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/UnityFileSystemApiLibraries/*
+!tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/UnityFileSystemApiLibraries/.gitkeep
+
+# User-supplied real test data, see tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/TestData/.gitkeep
+tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/TestData/*
+!tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/TestData/.gitkeep

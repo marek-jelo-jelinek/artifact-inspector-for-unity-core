@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tesearis.ArtifactInspectorForUnity.Core/Tesearis.ArtifactInspectorForUnity.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tesearis.ArtifactInspectorForUnity.Core.Tests/Tesearis.ArtifactInspectorForUnity.Core.Tests.csproj" />
+  </Folder>
+</Solution>

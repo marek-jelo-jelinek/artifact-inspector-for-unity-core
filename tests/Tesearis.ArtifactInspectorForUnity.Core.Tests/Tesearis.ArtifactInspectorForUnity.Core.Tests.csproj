@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Tesearis.ArtifactInspectorForUnity.Core.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Tesearis.ArtifactInspectorForUnity.Core/Tesearis.ArtifactInspectorForUnity.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Model\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copies whatever is actually present locally (just .gitkeep on a fresh clone,
+         plus a real UnityFileSystemApi.dylib/.dll/.so once a contributor drops one in
+         from their own Unity Editor install, see UnityFileSystemApiLibraries/.gitkeep). -->
+    <Content Include="UnityFileSystemApiLibraries\**" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- Same pattern for user-supplied real test data (just .gitkeep on a fresh clone,
+         plus whatever real Unity-built files a contributor drops in, see TestData/.gitkeep). -->
+    <Content Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

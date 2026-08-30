@@ -1,0 +1,296 @@
+using System;
+using System.IO;
+using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
+using Tesearis.ArtifactInspectorForUnity.Core.Model;
+using Tesearis.ArtifactInspectorForUnity.Core.Native;
+using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
+using NUnit.Framework;
+using static Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport.SerializedFileTestFixtures;
+
+namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
+{
+    [TestFixture]
+    public class SerializedFileDetectorTests
+    {
+        [Test]
+        public void TryDetect_NoTypeTree_ParsesObjectsAndExternalReferences()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(4);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 1, ScriptTypeIndex = -1 });   // no scriptId
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 114, ScriptTypeIndex = -1 }); // scriptId via MonoBehaviour
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 200, ScriptTypeIndex = 3 });  // scriptId via scriptTypeIndex>=0
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = -1, ScriptTypeIndex = -1 });  // scriptId via undefined persistentTypeId
+            writer.WriteInt32(3);
+            AppendObjectEntry(writer, pathId: 1001, byteStart: 0, byteSize: 64, typeIndex: 0);
+            AppendObjectEntry(writer, pathId: 1002, byteStart: 64, byteSize: 128, typeIndex: 1);
+            AppendObjectEntry(writer, pathId: 1003, byteStart: 999, byteSize: 16, typeIndex: 99); // out-of-range typeIndex
+            writer.WriteInt32(0);
+            writer.WriteInt32(1);
+            AppendExternalReference(writer, 0x11223344, 0x55667788, 0x99AABBCC, 0xDDEEFF00, type: 2, path: "Assets/Foo.cs");
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 1000);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.True);
+            Assert.That(info.Version, Is.EqualTo(23u));
+            Assert.That(info.UnityVersion, Is.EqualTo("6000.3.0f1"));
+            Assert.That(info.TargetPlatform, Is.EqualTo(5u));
+            Assert.That(info.EnableTypeTree, Is.False);
+            Assert.That(info.IsMissingTypeTrees, Is.True);
+
+            Assert.That(info.Objects.Count, Is.EqualTo(3));
+            Assert.That((info.Objects[0].PathId, info.Objects[0].TypeId, info.Objects[0].ByteOffset, info.Objects[0].ByteSize),
+                Is.EqualTo((1001L, 1, 1000L, 64L)));
+            Assert.That(info.Objects[0].ClassName, Is.EqualTo("GameObject"));
+            Assert.That((info.Objects[1].PathId, info.Objects[1].TypeId, info.Objects[1].ByteOffset, info.Objects[1].ByteSize),
+                Is.EqualTo((1002L, 114, 1064L, 128L)));
+            Assert.That(info.Objects[1].ClassName, Is.EqualTo("MonoBehaviour"));
+            // typeIndex 99 is out of range (only 4 types) -- TypeId must fall back to the raw index.
+            Assert.That((info.Objects[2].PathId, info.Objects[2].TypeId, info.Objects[2].ByteOffset, info.Objects[2].ByteSize),
+                Is.EqualTo((1003L, 99, 1999L, 16L)));
+
+            Assert.That(info.ExternalReferences.Count, Is.EqualTo(1));
+            Assert.That(info.ExternalReferences[0].Path, Is.EqualTo("Assets/Foo.cs"));
+            Assert.That(info.ExternalReferences[0].Type, Is.EqualTo(ExternalReferenceType.SerializedAssetType));
+            Assert.That(info.ExternalReferences[0].Guid,
+                Is.EqualTo(GuidFormatting.FormatUnityGuid(0x11223344, 0x55667788, 0x99AABBCC, 0xDDEEFF00)));
+        }
+
+        [Test]
+        public void TryDetect_Version23WithInlineTypeTreeBlobs_SkipsBlobsAndParsesObjectsCorrectly()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.0.10f1", 19, enableTypeTree: true);
+            writer.WriteInt32(2);
+            AppendTypeEntry(writer, true, new TypeEntrySpec
+            {
+                PersistentTypeId = 1,
+                ScriptTypeIndex = -1,
+                TypeTreeBlobBody = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 },
+            });
+            AppendTypeEntry(writer, true, new TypeEntrySpec
+            {
+                PersistentTypeId = 114,
+                ScriptTypeIndex = -1,
+                TypeTreeBlobBody = null, // typeTreeSize == 0 -- extracted-to-external-store case
+            });
+            writer.WriteInt32(2);
+            AppendObjectEntry(writer, pathId: 2001, byteStart: 500, byteSize: 32, typeIndex: 0);
+            AppendObjectEntry(writer, pathId: 2002, byteStart: 532, byteSize: 64, typeIndex: 1);
+            writer.WriteInt32(0);
+            writer.WriteInt32(0);
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.True);
+            Assert.That(info.EnableTypeTree, Is.True);
+            Assert.That(info.IsMissingTypeTrees, Is.False);
+            Assert.That(info.Objects.Count, Is.EqualTo(2));
+            Assert.That((info.Objects[0].PathId, info.Objects[0].TypeId, info.Objects[0].ByteOffset, info.Objects[0].ByteSize),
+                Is.EqualTo((2001L, 1, 500L, 32L)));
+            Assert.That((info.Objects[1].PathId, info.Objects[1].TypeId, info.Objects[1].ByteOffset, info.Objects[1].ByteSize),
+                Is.EqualTo((2002L, 114, 532L, 64L)));
+            Assert.That(info.ExternalReferences.Count, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void TryDetect_VersionBelowSupported_MetadataNotParsedButHeaderFieldsPresent()
+        {
+            var buffer = BuildHeader(version: 21, endianness: 0, metadataSize: 0, fileSize: 48, dataOffset: 0, trailingByteCount: 0);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.False);
+            Assert.That(info.MetadataParseError, Is.Not.Null.And.Not.Empty);
+            Assert.That(info.Version, Is.EqualTo(21u));
+            Assert.That(info.Objects, Is.Empty);
+            Assert.That(info.ExternalReferences, Is.Empty);
+        }
+
+        [Test]
+        public void TryDetect_VersionAboveSupported_MetadataNotParsedButHeaderFieldsPresent()
+        {
+            var buffer = BuildHeader(version: 30, endianness: 0, metadataSize: 0, fileSize: 48, dataOffset: 0, trailingByteCount: 0);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.False);
+            Assert.That(info.MetadataParseError, Is.Not.Null.And.Not.Empty);
+            Assert.That(info.Version, Is.EqualTo(30u));
+        }
+
+        [Test]
+        public void TryDetect_UnterminatedUnityVersionString_MetadataNotParsedWithoutThrowing()
+        {
+            var metadataBytes = new ByteBufferWriter().WriteRawBytesNoPrefix(new byte[] { (byte)'a', (byte)'b', (byte)'c' }).ToArray();
+            var buffer = WrapWithHeader(metadataBytes, version: 23, endianness: 0, dataOffset: 0);
+
+            SerializedFileInfo info = default;
+            Assert.DoesNotThrow(() => SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out info));
+            Assert.That(info.MetadataParsed, Is.False);
+            Assert.That(info.MetadataParseError, Is.Not.Null.And.Not.Empty);
+        }
+
+        [Test]
+        public void TryDetect_EmptyUnityVersionString_MetadataNotParsedWithoutThrowing()
+        {
+            var metadataBytes = new ByteBufferWriter().WriteNullTerminatedString("").ToArray();
+            var buffer = WrapWithHeader(metadataBytes, version: 23, endianness: 0, dataOffset: 0);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.False);
+            Assert.That(info.MetadataParseError, Is.Not.Null.And.Not.Empty);
+        }
+
+        [Test]
+        public void TryDetect_NegativeTypeCount_Throws()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(-1); // corrupt: negative typeCount
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            Assert.Throws<ArtifactInspectorException>(() => SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out _));
+        }
+
+        [Test]
+        public void TryDetect_TypeCountClaimsMoreEntriesThanRemainingBytesSupport_Throws()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(1); // claims one type entry, but the buffer ends right here
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            Assert.Throws<ArtifactInspectorException>(() => SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out _));
+        }
+
+        [Test]
+        public void TryDetect_TypeCountFarExceedsRemainingBytes_ThrowsCleanExceptionInsteadOfHugeAllocation()
+        {
+            // A small file with a huge count field here couldtrigger a multi-gigabyte allocation attempt instead of failing cleanly.
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(int.MaxValue); // corrupt: absurd typeCount for a tiny buffer
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            Assert.Throws<ArtifactInspectorException>(() => SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out _));
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_EnableTypeTreeFalse_ReturnsTrue()
+        {
+            var metadataBytes = new ByteBufferWriter();
+            AppendLeadingMetadata(metadataBytes, "6000.3.0f1", 5, enableTypeTree: false);
+            var buffer = WrapWithHeader(metadataBytes.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            Assert.That(SerializedFileDetector.IsMissingTypeTrees(new InMemoryByteSource(buffer)), Is.True);
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_EnableTypeTreeTrue_ReturnsFalse()
+        {
+            var metadataBytes = new ByteBufferWriter();
+            AppendLeadingMetadata(metadataBytes, "6000.3.0f1", 5, enableTypeTree: true);
+            var buffer = WrapWithHeader(metadataBytes.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            Assert.That(SerializedFileDetector.IsMissingTypeTrees(new InMemoryByteSource(buffer)), Is.False);
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_VersionOutOfRange_ReturnsFalse()
+        {
+            var buffer = BuildHeader(version: 21, endianness: 0, metadataSize: 0, fileSize: 48, dataOffset: 0, trailingByteCount: 0);
+
+            Assert.That(SerializedFileDetector.IsMissingTypeTrees(new InMemoryByteSource(buffer)), Is.False);
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_NotASerializedFile_ReturnsFalse()
+        {
+            var buffer = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
+
+            Assert.That(SerializedFileDetector.IsMissingTypeTrees(new InMemoryByteSource(buffer)), Is.False);
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_CorruptionOnlyInExtendedRegionItNeverReaches_DoesNotThrowAndStillReportsCorrectly()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(-1); // corrupt extended-region data IsMissingTypeTrees never reads
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            var result = false;
+            Assert.DoesNotThrow(() => result = SerializedFileDetector.IsMissingTypeTrees(new InMemoryByteSource(buffer)));
+            Assert.That(result, Is.True);
+        }
+
+        [Test]
+        public void TryDetect_FilePathOverload_MatchesByteSourceOverload()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.0f1", 5, enableTypeTree: false);
+            writer.WriteInt32(0).WriteInt32(0).WriteInt32(0).WriteInt32(0);
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            var path = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllBytes(path, buffer);
+
+                var detected = SerializedFileDetector.TryDetect(path, out var info);
+
+                Assert.That(detected, Is.True);
+                Assert.That(info.MetadataParsed, Is.True);
+                Assert.That(info.EnableTypeTree, Is.False);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_FilePathOverload_MatchesByteSourceOverload()
+        {
+            var metadataBytes = new ByteBufferWriter();
+            AppendLeadingMetadata(metadataBytes, "6000.3.0f1", 5, enableTypeTree: false);
+            var buffer = WrapWithHeader(metadataBytes.ToArray(), version: 23, endianness: 0, dataOffset: 0);
+
+            var path = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllBytes(path, buffer);
+
+                Assert.That(SerializedFileDetector.IsMissingTypeTrees(path), Is.True);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Test]
+        public void TryDetect_NullFilePath_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => SerializedFileDetector.TryDetect((string)null, out _));
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_NullFilePath_ReturnsFalse()
+        {
+            Assert.That(SerializedFileDetector.IsMissingTypeTrees((string)null), Is.False);
+        }
+    }
+}

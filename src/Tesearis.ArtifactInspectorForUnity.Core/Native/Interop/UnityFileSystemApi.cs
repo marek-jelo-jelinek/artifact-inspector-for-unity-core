@@ -119,7 +119,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
         private delegate ReturnCode OpenFileDelegate(byte[] virtualPath, out IntPtr fileHandle);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate ReturnCode ReadFileDelegate(IntPtr fileHandle, byte[] buffer, long size, out long readSize);
+        private delegate ReturnCode ReadFileDelegate(IntPtr fileHandle, long size, byte[] buffer, out long readSize);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate ReturnCode SeekFileDelegate(IntPtr fileHandle, long offset, int whence, out long newPosition);
@@ -393,7 +393,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
 
         internal long ReadFile(IntPtr fileHandle, byte[] buffer, long size)
         {
-            _readFile(fileHandle, buffer, size, out var readSize).ThrowIfNotSuccess("UFS_ReadFile");
+            _readFile(fileHandle, size, buffer, out var readSize).ThrowIfNotSuccess("UFS_ReadFile");
             return readSize;
         }
 

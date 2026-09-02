@@ -15,15 +15,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
     internal static class TestDataFixture
     {
         private const string FolderName = "TestData";
-        private const string PlaceholderFileName = ".gitkeep";
 
         internal static string[] DiscoverFiles()
         {
             var folder = Path.Combine(AppContext.BaseDirectory, FolderName);
-            if (!Directory.Exists(folder)) return Array.Empty<string>();
+            if (!Directory.Exists(folder)) return [];
 
-            return Directory.GetFiles(folder)
-                .Where(path => !string.Equals(Path.GetFileName(path), PlaceholderFileName, StringComparison.Ordinal))
+            return Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
+                .Where(path => !Path.GetFileName(path).StartsWith("."))
                 .ToArray();
         }
     }

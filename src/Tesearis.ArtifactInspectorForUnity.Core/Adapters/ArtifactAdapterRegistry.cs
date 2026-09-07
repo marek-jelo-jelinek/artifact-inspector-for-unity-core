@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
+using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
 
 namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
 {
@@ -36,7 +38,21 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
             if (serializedFile == null) throw new ArgumentNullException(nameof(serializedFile));
             if (archive == null) throw new ArgumentNullException(nameof(archive));
 
-            var reader = objectRef.GetReader();
+            TypeTreeReader reader;
+            try
+            {
+                reader = objectRef.GetReader();
+            }
+            catch (ArtifactInspectorException ex) when (ex.Message.Contains("managed-reference shape"))
+            {
+                // Known, documented limitation (see README's "Known limitations"): [SerializeReference]
+                // polymorphic fields aren't decoded, so this object's offsets can't be computed and no
+                // adapter can read it -- fall back to a RawObject like any other unrecognized object,
+                // same as the numeric-ClassID fallback StrippedObjectInfo.ClassName uses for stripped
+                // files with no TypeTree at all.
+                return new RawObject(objectRef, TypeIdRegistry.GetTypeName(objectRef.TypeId));
+            }
+
             var context = new ArtifactAdapterContext(objectRef, reader, serializedFile, archive);
             return TryResolve(context, out var adapter) ? adapter.Read(context) : new RawObject(objectRef, reader.TypeName);
         }

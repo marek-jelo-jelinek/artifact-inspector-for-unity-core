@@ -23,6 +23,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cached for the lifetime of the `ArtifactArchive`, rather than retried per call: repeatedly issuing a native
   open already known to fail was observed to eventually crash the native library's process outright.
 
+### Known issues (not yet resolved)
+
+- Even with the fix above, standalone testing against real Addressables/AssetBundle archives (outside a
+  running Unity Editor, driving the same native library directly) found that reading actual field-level data
+  through an archive-mounted `FileHandle` -- `ArtifactArchive.ReadRawEntry`/`OpenRawByteSource` (used by every
+  adapter's `ReadRawData`), and even just walking a `TypeTreeReader`'s field structure (`HasField`/`Field`,
+  needed by every typed adapter) -- can crash the host process (a native segfault) for some entries, in ways
+  that don't reproduce for a plain non-archived file and aren't specific to any one class. Listing objects
+  (class name, byte size, `SerializedFile.Objects`/`ObjectRef` metadata) does not hit this path and was not
+  observed to crash. Needs verification from inside an actual running Unity Editor process (this reproduction
+  used a standalone .NET host loading the native library directly) before this can be considered understood,
+  let alone fixed.
+
 ## [1.0.0] - 2026-08-30
 
 Initial release.

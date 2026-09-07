@@ -1,4 +1,5 @@
 using System;
+using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Native.Handles;
@@ -7,7 +8,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
 {
     public static class ArtifactInspector
     {
-        private static readonly Lazy<UnityFileSystemLibraryHandle> Library =
+        private static Lazy<UnityFileSystemLibraryHandle> Library =
             new(UnityFileSystemLibraryHandle.LoadAndInit, System.Threading.LazyThreadSafetyMode.PublicationOnly);
 
         /// <summary>Mounts a built archive (an asset bundle or player-build data file) and returns a handle to it.</summary>
@@ -20,6 +21,26 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
             var archiveRawHandle = api.MountArchive(filePath, mountPoint);
             var archiveHandle = new ArchiveHandle(api, archiveRawHandle);
             return new ArtifactArchive(api, archiveHandle, mountPoint);
+        }
+
+        /// <summary>
+        /// Opens a loose SerializedFile sitting directly on disk -- a Player Build's output files
+        /// (<c>globalgamemanagers</c>, <c>sharedassets0.assets</c>, <c>level0</c>, ...), which are
+        /// already bare SerializedFiles rather than archive containers. Unlike <see cref="OpenAssetBundle"/>,
+        /// this never calls <c>UFS_MountArchive</c> -- it opens filePath directly, so it fails with
+        /// <see cref="Native.NativeCallException"/> for an actual archive/asset bundle; use
+        /// <see cref="OpenAssetBundle"/> for those instead.
+        /// </summary>
+        /// <exception cref="Model.SerializedFileOpenException">
+        /// The native open failed and the file's bytes positively confirm it has no TypeTrees (e.g. a stripped Player build).
+        /// </exception>
+        /// <exception cref="Native.NativeCallException">The native open failed for any other reason.</exception>
+        public static SerializedFile OpenSerializedFile(string filePath)
+        {
+            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+
+            var api = GetLibrary().Api;
+            return SerializedFileOpener.Open(api, filePath, filePath, () => SerializedFileDetector.IsMissingTypeTrees(filePath));
         }
 
         /// <summary>
@@ -80,5 +101,27 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
         public static string GetUnityEditorVersion() => GetLibrary().Api.GetUnityVersion();
 
         private static UnityFileSystemLibraryHandle GetLibrary() => Library.Value;
+
+        /// <summary>
+        /// Test-only seam: disposes the currently loaded native library (if any -- a no-op otherwise)
+        /// and resets this class back to its just-loaded-the-assembly state, so a subsequent call
+        /// behaves like a fresh process. Exists because this class is designed to load its native
+        /// library once per process and never unload it (matching a real Unity Editor host), which
+        /// conflicts with any other test fixture that independently loads/initializes/disposes the
+        /// same native library within the same test process (see UnityFileSystemApiIntegrationTests).
+        /// Internal -- not part of the public API contract. Any fixture that touches this class's
+        /// shared native library should call this from a [OneTimeTearDown] so it doesn't leak
+        /// process-wide UFS_Init state into whichever fixture runs next.
+        /// </summary>
+        internal static void ResetForTests()
+        {
+            if (Library.IsValueCreated)
+            {
+                Library.Value.Dispose();
+            }
+
+            Library = new Lazy<UnityFileSystemLibraryHandle>(
+                UnityFileSystemLibraryHandle.LoadAndInit, System.Threading.LazyThreadSafetyMode.PublicationOnly);
+        }
     }
 }

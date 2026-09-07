@@ -14,12 +14,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
     /// actually require a TypeTree to read.
     ///
     /// Full metadata parsing (Unity version, EnableTypeTree, object list, external references) is
-    /// only implemented for format version 23 (Unity 6000.3+, see
+    /// only implemented for format versions 22 and 23 (Unity 6000.3.x, see
     /// <see cref="SerializedFileInfo.MetadataParsed"/>).
     /// </summary>
     public static class SerializedFileDetector
     {
-        private const uint SupportedMetadataVersion = 23;
+        private static readonly HashSet<uint> SupportedMetadataVersions = new() { 22, 23 };
         private const int MonoBehaviourClassId = 114;
         private const int UndefinedPersistentTypeId = -1;
 
@@ -42,11 +42,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
             if (!SerializedFileHeaderParser.TryParse(source, out var header)) return false;
 
-            if (header.Version != SupportedMetadataVersion)
+            if (!SupportedMetadataVersions.Contains(header.Version))
             {
                 info = HeaderOnlyInfo(header,
                     "Metadata parsing is not supported for SerializedFile version " + header.Version +
-                    ". Only version " + SupportedMetadataVersion + " (Unity 6000.3+) is supported.");
+                    ". Only versions 22 and 23 (Unity 6000.3.x) are supported.");
                 return true;
             }
 
@@ -86,7 +86,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             try
             {
                 if (!SerializedFileHeaderParser.TryParse(source, out var header)) return false;
-                if (header.Version != SupportedMetadataVersion) return false;
+                if (!SupportedMetadataVersions.Contains(header.Version)) return false;
 
                 return TryParseLeadingMetadata(source, header, out _, out _, out var enableTypeTree, out _)
                     && !enableTypeTree;
@@ -252,15 +252,28 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
             if (!enableTypeTree) return persistentTypeId;
 
-            reader.Skip(16); // typeTreeContentHash (Hash128)
-            var typeTreeSize = reader.ReadUInt32();
-            if (typeTreeSize > 0) reader.Skip(typeTreeSize);
+            // TypeTree blob (versions 22/23 always use the "blob" node-table format, never the
+            // older recursive text-node format): numberOfNodes (int32), stringBufferSize (int32),
+            // then numberOfNodes fixed-size node records, then the string buffer itself. No
+            // per-type "typeTreeSize" length prefix exists in this format -- the total size has to
+            // be computed from these three pieces.
+            var numberOfNodes = ReadNonNegativeCount(reader, "type tree node");
+            var stringBufferSize = ReadNonNegativeCount(reader, "type tree string buffer");
+            reader.Skip(numberOfNodes * (long)TypeTreeNodeBlobRecordSize + stringBufferSize);
 
             var depCount = ReadNonNegativeCount(reader, "type dependency");
             reader.Skip(depCount * 4L);
 
             return persistentTypeId;
         }
+
+        /// <summary>
+        /// Byte size of one fixed-size TypeTree node record in the on-disk blob format: UInt16
+        /// version, byte level, byte typeFlags, UInt32 typeStrOffset, UInt32 nameStrOffset, int32
+        /// byteSize, int32 index, int32 metaFlag, UInt64 refTypeHash (present for every format
+        /// version this project supports, 22 and 23).
+        /// </summary>
+        private const int TypeTreeNodeBlobRecordSize = 32;
 
         private static int ReadNonNegativeCount(SerializedFileByteReader reader, string fieldName)
         {

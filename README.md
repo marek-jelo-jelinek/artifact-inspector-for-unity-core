@@ -189,7 +189,7 @@ Field *values* are out of scope for a stripped file: there is no schema to read 
 labeled by class name via `TypeIdRegistry`) and the external-reference list, both of which don't actually require a TypeTree to read.
 
 - `BinaryFormat.SerializedFileDetector`: `TryDetect` detects and parses a SerializedFile straight off bytes; `IsMissingTypeTrees` is a cheap fast path that checks only whether `EnableTypeTree` is false.
-- `SerializedFileInfo` (readonly struct): the parsed header, metadata, object list, and external references, plus `MetadataParsed`/`MetadataParseError` for versions this library can't fully parse (only format version 23, Unity 6000.3+, is supported).
+- `SerializedFileInfo` (readonly struct): the parsed header, metadata, object list, and external references, plus `MetadataParsed`/`MetadataParseError` for versions this library can't fully parse (only format versions 22 and 23, Unity 6000.3.x, are supported).
 - `StrippedObjectInfo` (readonly struct): `PathId`, `TypeId`, `ByteOffset`, `ByteSize`, `ClassName`; deliberately separate from `ObjectRef` since there's no TypeTree to build a reader from, so it exposes no `GetReader()`.
 - `TypeIdRegistry`: static Unity ClassID to class name lookup, the only way to label a stripped object's type.
 - `YamlSerializedFileDetector`: sniffs the `%YAML 1.1` magic to reject Editor-text-format `.asset`/`.prefab`/`.unity` files up front, as a fast triage before attempting a binary parse.

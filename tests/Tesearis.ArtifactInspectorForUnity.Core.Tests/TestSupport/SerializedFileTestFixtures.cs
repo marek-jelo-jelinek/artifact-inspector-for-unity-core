@@ -6,9 +6,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
     /// Hand-builds byte-for-byte Unity SerializedFile fixtures (header + metadata section) for
     /// BinaryFormat tests, mirroring exactly what SerializedFileDetector expects to read. Only
     /// covers the fields that parser actually reads/skips -- not a general-purpose writer. Always
-    /// builds the modern (48-byte, 64-bit) header/metadata layout used by version 23 (Unity
-    /// 6000.3+); a `version` parameter is still accepted so tests can exercise how an unsupported
-    /// version is rejected.
+    /// builds the modern (48-byte, 64-bit) header/metadata layout shared by versions 22 and 23
+    /// (Unity 6000.3.x); a `version` parameter is still accepted so tests can exercise how an
+    /// unsupported version is rejected.
     /// </summary>
     internal static class SerializedFileTestFixtures
     {
@@ -19,10 +19,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
             internal short ScriptTypeIndex = -1;
 
             /// <summary>
-            /// When enableTypeTree is true: the "content" bytes standing in for a TypeTree blob.
-            /// Null means no blob content (typeTreeSize 0).
+            /// When enableTypeTree is true: how many (filler) TypeTree node records to write.
+            /// Zero means no embedded TypeTree (e.g. an externally-sourced one).
             /// </summary>
-            internal byte[] TypeTreeBlobBody;
+            internal int TypeTreeNodeCount;
+
+            /// <summary>When enableTypeTree is true: how many (filler) string-buffer bytes to write after the node records.</summary>
+            internal int TypeTreeStringBufferSize;
 
             internal int[] TypeDependencies = Array.Empty<int>();
         }
@@ -90,10 +93,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
 
             if (!enableTypeTree) return writer;
 
-            writer.WriteZeros(16); // typeTreeContentHash (Hash128)
-            var typeTreeSize = (uint)(spec.TypeTreeBlobBody?.Length ?? 0);
-            writer.WriteUInt32(typeTreeSize);
-            if (typeTreeSize > 0) writer.WriteRawBytesNoPrefix(spec.TypeTreeBlobBody);
+            // TypeTree blob (the "node table" format every version this project supports uses):
+            // numberOfNodes, stringBufferSize, then that many fixed-size (32-byte) node records,
+            // then the string buffer itself. Content is never read by this feature (only skipped
+            // past), so filler bytes stand in for both.
+            const int nodeRecordSize = 32;
+            writer.WriteInt32(spec.TypeTreeNodeCount);
+            writer.WriteInt32(spec.TypeTreeStringBufferSize);
+            if (spec.TypeTreeNodeCount > 0) writer.WriteZeros(spec.TypeTreeNodeCount * nodeRecordSize);
+            if (spec.TypeTreeStringBufferSize > 0) writer.WriteZeros(spec.TypeTreeStringBufferSize);
 
             var deps = spec.TypeDependencies ?? Array.Empty<int>();
             writer.WriteInt32(deps.Length);

@@ -61,6 +61,37 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         }
 
         [Test]
+        public void TryDetect_Version22_ParsesObjectsAndExternalReferences()
+        {
+            // Same layout as the version-23 case above -- version 22 (real Unity 6000.3.x Player
+            // builds, e.g. an Android Gradle export built with 6000.3.13f1) uses an identical
+            // metadata layout, just a different version number in the header.
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.13f1", 13, enableTypeTree: false);
+            writer.WriteInt32(1);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 1, ScriptTypeIndex = -1 });
+            writer.WriteInt32(1);
+            AppendObjectEntry(writer, pathId: 1, byteStart: 0, byteSize: 64, typeIndex: 0);
+            writer.WriteInt32(0);
+            writer.WriteInt32(0);
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 22, endianness: 0, dataOffset: 1000);
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.True);
+            Assert.That(info.Version, Is.EqualTo(22u));
+            Assert.That(info.UnityVersion, Is.EqualTo("6000.3.13f1"));
+            Assert.That(info.TargetPlatform, Is.EqualTo(13u));
+            Assert.That(info.EnableTypeTree, Is.False);
+            Assert.That(info.Objects.Count, Is.EqualTo(1));
+            Assert.That((info.Objects[0].PathId, info.Objects[0].TypeId, info.Objects[0].ByteOffset, info.Objects[0].ByteSize),
+                Is.EqualTo((1L, 1, 1000L, 64L)));
+            Assert.That(info.ExternalReferences, Is.Empty);
+        }
+
+        [Test]
         public void TryDetect_Version23WithInlineTypeTreeBlobs_SkipsBlobsAndParsesObjectsCorrectly()
         {
             var writer = new ByteBufferWriter();
@@ -70,13 +101,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
             {
                 PersistentTypeId = 1,
                 ScriptTypeIndex = -1,
-                TypeTreeBlobBody = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 },
+                TypeTreeNodeCount = 2,
+                TypeTreeStringBufferSize = 10,
             });
             AppendTypeEntry(writer, true, new TypeEntrySpec
             {
                 PersistentTypeId = 114,
                 ScriptTypeIndex = -1,
-                TypeTreeBlobBody = null, // typeTreeSize == 0 -- extracted-to-external-store case
+                // Zero nodes and an empty string buffer -- extracted-to-external-store case.
             });
             writer.WriteInt32(2);
             AppendObjectEntry(writer, pathId: 2001, byteStart: 500, byteSize: 32, typeIndex: 0);

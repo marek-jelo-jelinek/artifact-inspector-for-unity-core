@@ -110,5 +110,40 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
 
             Assert.Throws<ArtifactInspectorException>(() => TypeTreeOffsetWalker.ComputeSize(malformedArrayNode, 0, byteSource));
         }
+
+        [Test]
+        public void ComputeSize_TypelessDataField_ReadsRealLengthPrefixInsteadOfFixedFiveBytes()
+        {
+            var node = FakeTypeTreeBuilder.TypelessData("image data");
+            var buffer = new ByteBufferWriter().WriteInt32(6).WriteZeros(6).ToArray();
+            var byteSource = new InMemoryByteSource(buffer);
+
+            var size = TypeTreeOffsetWalker.ComputeSize(node, 0, byteSource);
+
+            Assert.That(size, Is.EqualTo(10L), "4-byte length prefix + 6 real data bytes, not the fixed 4+1=5");
+        }
+
+        [Test]
+        public void GetChildByIndex_TypelessDataFieldFollowedByAnotherField_SiblingStartsAfterRealPayload()
+        {
+            var structNode = FakeTypeTreeBuilder.Struct(
+                "Texture2D", "Texture2D",
+                FakeTypeTreeBuilder.TypelessData("image data"),
+                FakeTypeTreeBuilder.Int32("m_Width"));
+
+            var buffer = new ByteBufferWriter()
+                .WriteInt32(3).WriteByte(1).WriteByte(2).WriteByte(3) // image data: 3-byte payload
+                .WriteInt32(256) // m_Width
+                .ToArray();
+            var byteSource = new InMemoryByteSource(buffer);
+            var reader = new TypeTreeReader(structNode, byteSource, 0);
+
+            var imageData = reader.Field("image data");
+            var width = reader.Field("m_Width");
+
+            Assert.That((imageData.ByteOffset, imageData.ByteSize), Is.EqualTo((0L, 7L)));
+            Assert.That(width.ByteOffset, Is.EqualTo(7L), "m_Width should start right after the real 3-byte payload, not after a fixed 5-byte TypelessData size");
+            Assert.That(width.AsInt32(), Is.EqualTo(256));
+        }
     }
 }

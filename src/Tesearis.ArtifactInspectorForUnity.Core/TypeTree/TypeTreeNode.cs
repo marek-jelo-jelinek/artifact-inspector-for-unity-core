@@ -10,6 +10,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
     public sealed class TypeTreeNode
     {
         private const string ArrayTypeName = "Array";
+        private const string TypelessDataTypeName = "TypelessData";
 
         public string Name { get; }
         public string TypeName { get; }
@@ -41,7 +42,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             ByteSize = byteSize;
             Flags = flags;
             MetaFlags = metaFlags;
-            IsAligned = (metaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
             RequireNoManagedReferenceFlags(flags);
 
             var rawChildren = children ?? new List<TypeTreeNode>();
@@ -50,6 +50,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 // Unwrap the implicit Array child.
                 IsArrayLike = true;
                 Children = rawChildren[0].Children;
+                IsAligned = (rawChildren[0].MetaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
                 RequireArrayFlag(rawChildren[0].Flags);
             }
             else if (typeName == ArrayTypeName)
@@ -57,12 +58,27 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 // A bare Array node with no wrapper.
                 IsArrayLike = true;
                 Children = rawChildren;
+                IsAligned = (metaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
                 RequireArrayFlag(flags);
+            }
+            else if (typeName == TypelessDataTypeName)
+            {
+                if (rawChildren.Count != 2)
+                {
+                    throw new ArtifactInspectorException(
+                        "Type tree node '" + name + "' (TypelessData) has " + rawChildren.Count +
+                        " children; expected 2 (size and data).");
+                }
+
+                IsArrayLike = true;
+                Children = rawChildren;
+                IsAligned = (metaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
             }
             else
             {
                 IsArrayLike = false;
                 Children = rawChildren;
+                IsAligned = (metaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
             }
         }
 

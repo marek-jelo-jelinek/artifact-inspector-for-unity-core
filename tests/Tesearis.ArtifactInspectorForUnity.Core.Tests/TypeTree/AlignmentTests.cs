@@ -81,5 +81,40 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.That(flag.ByteSize, Is.EqualTo(1L));
             Assert.That(value.ByteOffset, Is.EqualTo(4L), "the int should round up to the next 4-byte boundary, not sit at offset 1");
         }
+
+        [Test]
+        public void IsAligned_VectorField_ReadsAlignBytesOffTheInnerArrayNodeNotTheOuterWrapper()
+        {
+            var aligned = FakeTypeTreeBuilder.Vector("m_Items", FakeTypeTreeBuilder.Byte("data"), aligned: true);
+            var unaligned = FakeTypeTreeBuilder.Vector("m_Items", FakeTypeTreeBuilder.Byte("data"), aligned: false);
+
+            Assert.That(aligned.IsAligned, Is.True);
+            Assert.That(unaligned.IsAligned, Is.False);
+        }
+
+        [Test]
+        public void GetChildByIndex_AlignedVectorFieldFollowedByInt_IntStartsOnFourByteBoundary()
+        {
+            var structNode = FakeTypeTreeBuilder.Struct(
+                "Base", "WithAlignedVector",
+                FakeTypeTreeBuilder.Vector("m_Bytes", FakeTypeTreeBuilder.Byte("data"), aligned: true),
+                FakeTypeTreeBuilder.Int32("value"));
+
+            var buffer = new ByteBufferWriter()
+                .WriteInt32(3) // vector length prefix
+                .WriteByte(1).WriteByte(2).WriteByte(3) // 3 raw bytes -> ends at offset 7, unaligned
+                .WriteByte(0) // padding byte to the next 4-byte boundary (offset 8)
+                .WriteInt32(42)
+                .ToArray();
+            var byteSource = new InMemoryByteSource(buffer);
+            var reader = new TypeTreeReader(structNode, byteSource, 0);
+
+            var bytes = reader.Field("m_Bytes");
+            var value = reader.Field("value");
+
+            Assert.That((bytes.ByteOffset, bytes.ByteSize), Is.EqualTo((0L, 7L)));
+            Assert.That(value.ByteOffset, Is.EqualTo(8L), "value should start after the vector's trailing alignment padding, not right after its 7 raw bytes");
+            Assert.That(value.AsInt32(), Is.EqualTo(42));
+        }
     }
 }

@@ -47,10 +47,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
 
         internal static TypeTreeNode String(string name, bool aligned = false)
         {
+            var arrayNode = Array(Byte("data"), aligned);
             return new TypeTreeNode(
-                name, "string", -1, TypeTreeFlags.None,
-                aligned ? TypeTreeMetaFlags.AlignBytes : TypeTreeMetaFlags.None,
-                new List<TypeTreeNode>());
+                name, "string", -1, TypeTreeFlags.None, TypeTreeMetaFlags.None,
+                new List<TypeTreeNode> { arrayNode });
         }
 
         internal static TypeTreeNode Struct(string name, string typeName, params TypeTreeNode[] children)
@@ -76,11 +76,18 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
         /// </summary>
         internal static TypeTreeNode Vector(string name, TypeTreeNode elementTemplate, bool aligned = false)
         {
-            var arrayNode = Array(elementTemplate);
+            var arrayNode = Array(elementTemplate, aligned);
             return new TypeTreeNode(
-                name, "vector", -1, TypeTreeFlags.None,
-                aligned ? TypeTreeMetaFlags.AlignBytes : TypeTreeMetaFlags.None,
+                name, "vector", -1, TypeTreeFlags.None, TypeTreeMetaFlags.None,
                 new List<TypeTreeNode> { arrayNode });
+        }
+
+        internal static TypeTreeNode TypelessData(string name, bool aligned = false)
+        {
+            return new TypeTreeNode(
+                name, "TypelessData", -1, TypeTreeFlags.None,
+                aligned ? TypeTreeMetaFlags.AlignBytes : TypeTreeMetaFlags.None,
+                new List<TypeTreeNode> { Int32("size"), Byte("data") });
         }
     }
 }

@@ -24,6 +24,31 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         private readonly object _lock = new();
         private bool _disposed;
 
+        /// <summary>
+        /// The bare "archive:/" root, with no per-archive mount segment. At least one real
+        /// UnityFileSystemApi build (confirmed on Unity 6000.3.13f1's macOS Editor) mounts an archive
+        /// and lists its nodes fine via the handle-based calls, but silently ignores the caller-supplied
+        /// mount-point identifier passed to <c>UFS_MountArchive</c> for path *resolution*: every
+        /// "archive:" virtual path is resolved through one flat, un-namespaced root instead, so a
+        /// <see cref="_mountPoint"/>-qualified path (e.g. "archive:/&lt;guid&gt;/CAB-xxx") 404s there,
+        /// while the bare form ("archive:/CAB-xxx") opens fine.
+        /// </summary>
+        private const string BareArchiveRoot = "archive:/";
+
+        /// <summary>
+        /// Which virtual-path form this archive's native library actually honors for
+        /// <c>UFS_OpenFile</c>/<c>UFS_OpenSerializedFile</c> -- see <see cref="BareArchiveRoot"/>.
+        /// Determined once, in the constructor, via <see cref="ProbeVirtualPathScheme"/>: <c>false</c>
+        /// means the normal <see cref="_mountPoint"/>-qualified form works (and is used, so a native
+        /// library that *does* respect per-archive mount points -- letting multiple concurrently-mounted
+        /// archives disambiguate same-named entries -- keeps using that); <c>true</c> means only the bare
+        /// form resolved during the probe. Left <c>null</c> (defaulting to the normal form) when the probe
+        /// itself couldn't run (an archive with no entries at all) or was inconclusive -- deliberately not
+        /// re-probed per call, since repeatedly issuing a native open we already know will fail is exactly
+        /// the pattern observed to eventually crash the native library's test build.
+        /// </summary>
+        private bool? _usesBareArchiveRoot;
+
         internal ArtifactArchive(IUnityFileSystemApi api, ArchiveHandle archive, string mountPoint)
         {
             _api = api ?? throw new ArgumentNullException(nameof(api));
@@ -51,6 +76,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                         }
                     }
                 });
+
+                ProbeVirtualPathScheme();
             }
             catch
             {
@@ -59,6 +86,44 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                 throw;
             }
         }
+
+        /// <summary>
+        /// Determines and caches <see cref="_usesBareArchiveRoot"/> with a single, disposable
+        /// <c>UFS_OpenFile</c> call against this archive's first entry -- deliberately <c>OpenFile</c>
+        /// rather than <c>OpenSerializedFile</c>, since the latter can genuinely fail for a stripped
+        /// (no-TypeTree) entry regardless of which virtual-path form is correct, which would make that a
+        /// useless, misleading signal here. Left <c>null</c> if this archive has no entries to probe with,
+        /// or if neither form opens (a genuinely unreadable archive) -- either way, callers fall back to
+        /// the normal mount-scoped form and any real error surfaces from the real call instead.
+        /// </summary>
+        private void ProbeVirtualPathScheme()
+        {
+            if (_entries.Count == 0) return;
+
+            var probeEntry = _entries[0].Path;
+            try
+            {
+                _api.CloseFile(_api.OpenFile(_mountPoint + probeEntry));
+                _usesBareArchiveRoot = false;
+            }
+            catch (NativeCallException)
+            {
+                try
+                {
+                    _api.CloseFile(_api.OpenFile(BareArchiveRoot + probeEntry));
+                    _usesBareArchiveRoot = true;
+                }
+                catch (NativeCallException)
+                {
+                    // Neither form opens this entry -- leave undetermined; real calls below will
+                    // surface whatever the underlying issue actually is.
+                }
+            }
+        }
+
+        /// <summary>The virtual path to open <paramref name="entryName"/> at, per <see cref="_usesBareArchiveRoot"/>.</summary>
+        private string ResolveVirtualPath(string entryName) =>
+            (_usesBareArchiveRoot == true ? BareArchiveRoot : _mountPoint) + entryName;
 
         /// <summary>
         /// Names of the SerializedFile entries in this archive.
@@ -108,38 +173,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             {
                 ThrowIfDisposed();
 
-                var virtualPath = _mountPoint + entryName;
-                SerializedFileHandle serializedFileHandle;
-                try
-                {
-                    var rawSerializedHandle = _api.OpenSerializedFile(virtualPath);
-                    serializedFileHandle = new SerializedFileHandle(_api, rawSerializedHandle);
-                }
-                catch (NativeCallException) when (IsPositivelyMissingTypeTrees(entryName))
-                {
-                    // UFS_OpenSerializedFile refuses to open files with no TypeTrees at all, and
-                    // doesn't reliably report one consistent native error for that case.
-                    throw new SerializedFileOpenException(entryName, missingTypeTrees: true);
-                }
-
-                FileHandle fileHandle = null;
-                try
-                {
-                    var rawFileHandle = _api.OpenFile(virtualPath);
-                    fileHandle = new FileHandle(_api, rawFileHandle);
-
-                    var serializedFile = new SerializedFile(serializedFileHandle, fileHandle, new TypeTreeCache());
-                    serializedFile.SetOwner(RemoveSerializedFile);
-                    _openSerializedFiles.Add(serializedFile);
-                    return serializedFile;
-                }
-                catch
-                {
-                    // Construction failed, so dispose here before rethrowing.
-                    fileHandle?.Dispose();
-                    serializedFileHandle.Dispose();
-                    throw;
-                }
+                var virtualPath = ResolveVirtualPath(entryName);
+                var serializedFile = SerializedFileOpener.Open(
+                    _api, virtualPath, entryName, () => IsPositivelyMissingTypeTrees(entryName));
+                serializedFile.SetOwner(RemoveSerializedFile);
+                _openSerializedFiles.Add(serializedFile);
+                return serializedFile;
             }
         }
 
@@ -243,7 +282,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             if (_openFilesByEntryName.TryGetValue(entryName, out var existing)) return existing;
 
-            var rawFileHandle = _api.OpenFile(_mountPoint + entryName);
+            var rawFileHandle = _api.OpenFile(ResolveVirtualPath(entryName));
             var fileHandle = new FileHandle(_api, rawFileHandle);
             _openFilesByEntryName[entryName] = fileHandle;
             return fileHandle;

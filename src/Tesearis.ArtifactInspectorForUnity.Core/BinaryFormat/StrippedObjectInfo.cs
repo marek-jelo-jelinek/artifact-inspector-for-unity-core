@@ -16,12 +16,21 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
         /// <summary>The class name for <see cref="TypeId"/>, via <see cref="TypeIdRegistry"/>.</summary>
         public string ClassName => TypeIdRegistry.GetTypeName(TypeId);
 
-        internal StrippedObjectInfo(long pathId, int typeId, long byteOffset, long byteSize)
+        /// <summary>
+        /// The object's <c>m_Name</c>, read directly off bytes with no TypeTree -- best-effort, and
+        /// only attempted for classes where the field's byte position is reliably known without one
+        /// (see <see cref="StrippedObjectNameReader"/>). <c>null</c> for every other class, and for
+        /// an attempt that didn't look like a valid name.
+        /// </summary>
+        public string Name { get; }
+
+        internal StrippedObjectInfo(long pathId, int typeId, long byteOffset, long byteSize, string name)
         {
             PathId = pathId;
             TypeId = typeId;
             ByteOffset = byteOffset;
             ByteSize = byteSize;
+            Name = name;
         }
     }
 }

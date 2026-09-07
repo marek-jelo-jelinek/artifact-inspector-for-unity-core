@@ -198,7 +198,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 var typeId = typeIndex >= 0 && typeIndex < typePersistentIds.Length
                     ? typePersistentIds[typeIndex]
                     : typeIndex;
-                objects.Add(new StrippedObjectInfo(pathId, typeId, byteOffset, byteSize));
+                var name = StrippedObjectNameReader.TryReadName(source, typeId, byteOffset, byteSize, header.IsBigEndian);
+                objects.Add(new StrippedObjectInfo(pathId, typeId, byteOffset, byteSize, name));
             }
 
             // Script-type list parsed only to advance the cursor correctly; not needed by this feature's output, so discarded.

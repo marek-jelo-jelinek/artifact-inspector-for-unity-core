@@ -61,6 +61,98 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         }
 
         [Test]
+        public void TryDetect_WhitelistedNamedObjectClass_PopulatesNameFromLeadingString()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.13f1", 13, enableTypeTree: false);
+            writer.WriteInt32(1);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 28, ScriptTypeIndex = -1 }); // Texture2D
+            writer.WriteInt32(1);
+            AppendObjectEntry(writer, pathId: 1, byteStart: 0, byteSize: 100, typeIndex: 0);
+            writer.WriteInt32(0); // script types
+            writer.WriteInt32(0); // external references
+            var nameOffsetInWriter = writer.Length;
+            writer.WriteString("MyTexture");
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: (ulong)(48 + nameOffsetInWriter));
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.True);
+            Assert.That(info.Objects.Count, Is.EqualTo(1));
+            Assert.That(info.Objects[0].Name, Is.EqualTo("MyTexture"));
+        }
+
+        [Test]
+        public void TryDetect_MonoBehaviour_PopulatesNameFromOffset28()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.13f1", 13, enableTypeTree: false);
+            writer.WriteInt32(1);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 114, ScriptTypeIndex = -1 }); // MonoBehaviour
+            writer.WriteInt32(1);
+            AppendObjectEntry(writer, pathId: 1, byteStart: 0, byteSize: 100, typeIndex: 0);
+            writer.WriteInt32(0);
+            writer.WriteInt32(0);
+            var objectStartInWriter = writer.Length;
+            writer.WriteZeros(28); // PPtr<GameObject> + m_Enabled + padding + PPtr<MonoScript>
+            writer.WriteString("MyBehaviour");
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: (ulong)(48 + objectStartInWriter));
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.Objects[0].Name, Is.EqualTo("MyBehaviour"));
+        }
+
+        [Test]
+        public void TryDetect_NonWhitelistedClass_NeverAttemptsNameEvenWhenLeadingBytesLookLikeAString()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.13f1", 13, enableTypeTree: false);
+            writer.WriteInt32(1);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 1, ScriptTypeIndex = -1 }); // GameObject -- not a NamedObject
+            writer.WriteInt32(1);
+            AppendObjectEntry(writer, pathId: 1, byteStart: 0, byteSize: 100, typeIndex: 0);
+            writer.WriteInt32(0);
+            writer.WriteInt32(0);
+            var nameOffsetInWriter = writer.Length;
+            writer.WriteString("LooksLikeAName"); // would parse as a valid name if this class were whitelisted
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: (ulong)(48 + nameOffsetInWriter));
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.Objects[0].Name, Is.Null);
+        }
+
+        [Test]
+        public void TryDetect_WhitelistedClassWithCorruptLeadingLength_NameIsNullNotGarbage()
+        {
+            var writer = new ByteBufferWriter();
+            AppendLeadingMetadata(writer, "6000.3.13f1", 13, enableTypeTree: false);
+            writer.WriteInt32(1);
+            AppendTypeEntry(writer, false, new TypeEntrySpec { PersistentTypeId = 28, ScriptTypeIndex = -1 }); // Texture2D
+            writer.WriteInt32(1);
+            AppendObjectEntry(writer, pathId: 1, byteStart: 0, byteSize: 100, typeIndex: 0);
+            writer.WriteInt32(0);
+            writer.WriteInt32(0);
+            var nameOffsetInWriter = writer.Length;
+            writer.WriteInt32(int.MaxValue); // absurd length -- not a real name field
+            writer.WriteZeros(16);
+
+            var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: (ulong)(48 + nameOffsetInWriter));
+
+            var detected = SerializedFileDetector.TryDetect(new InMemoryByteSource(buffer), out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.Objects[0].Name, Is.Null);
+        }
+
+        [Test]
         public void TryDetect_Version22_ParsesObjectsAndExternalReferences()
         {
             // Same layout as the version-23 case above -- version 22 (real Unity 6000.3.x Player

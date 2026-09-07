@@ -1,5 +1,3 @@
-using Tesearis.ArtifactInspectorForUnity.Core.Native;
-
 namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 {
     /// <summary>

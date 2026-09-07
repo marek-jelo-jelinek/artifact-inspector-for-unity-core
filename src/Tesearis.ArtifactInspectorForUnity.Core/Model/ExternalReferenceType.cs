@@ -1,4 +1,4 @@
-namespace Tesearis.ArtifactInspectorForUnity.Core.Native
+namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 {
     /// <summary>The kind of external reference, as returned by UFS_GetExternalReference.</summary>
     public enum ExternalReferenceType

@@ -122,24 +122,16 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         }
 
         /// <summary>The virtual path to open <paramref name="entryName"/> at, per <see cref="_usesBareArchiveRoot"/>.</summary>
-        private string ResolveVirtualPath(string entryName) =>
-            (_usesBareArchiveRoot == true ? BareArchiveRoot : _mountPoint) + entryName;
+        private string ResolveVirtualPath(string entryName)
+        {
+            return (_usesBareArchiveRoot == true ? BareArchiveRoot : _mountPoint) + entryName;
+        }
 
         /// <summary>
         /// Names of the SerializedFile entries in this archive.
         /// </summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
-        public IReadOnlyList<string> EntryNames
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    ThrowIfDisposed();
-                    return _entryNames;
-                }
-            }
-        }
+        public IReadOnlyList<string> EntryNames => Guarded<IReadOnlyList<string>>(() => _entryNames);
 
         /// <summary>
         /// Every readable entry in this archive (directories and deleted entries excluded).
@@ -147,17 +139,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// texture's out-of-line ".resS" payload.
         /// </summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
-        public IReadOnlyList<ArchiveEntryInfo> Entries
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    ThrowIfDisposed();
-                    return _entries;
-                }
-            }
-        }
+        public IReadOnlyList<ArchiveEntryInfo> Entries => Guarded<IReadOnlyList<ArchiveEntryInfo>>(() => _entries);
 
         /// <summary>Opens one SerializedFile entry from this archive by name.</summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
@@ -169,17 +151,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
 
-            lock (_lock)
+            return Guarded(() =>
             {
-                ThrowIfDisposed();
-
                 var virtualPath = ResolveVirtualPath(entryName);
                 var serializedFile = SerializedFileOpener.Open(
                     _api, virtualPath, entryName, () => IsPositivelyMissingTypeTrees(entryName));
                 serializedFile.SetOwner(RemoveSerializedFile);
                 _openSerializedFiles.Add(serializedFile);
                 return serializedFile;
-            }
+            });
         }
 
         /// <summary>Removes serializedFile from tracking once it disposes itself normally.</summary>
@@ -202,22 +182,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset must not be negative.");
             if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), size, "Size must not be negative.");
 
-            lock (_lock)
+            return Guarded(() =>
             {
-                ThrowIfDisposed();
-
                 var byteSource = OpenRawByteSource(entryName);
                 var buffer = new byte[size];
                 var read = byteSource.Read(offset, buffer, 0, size);
-                if (read != size)
-                {
-                    throw new ArtifactInspectorException(
-                        "Unexpected end of data while reading " + size + " bytes from '" + entryName +
-                        "' at offset " + offset + ".");
-                }
-
-                return buffer;
-            }
+                return read != size ? throw new ArtifactInspectorException($"Unexpected end of data while from '{entryName}'.") : buffer;
+            });
         }
 
         /// <summary>
@@ -229,19 +200,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
 
-            lock (_lock)
+            return Guarded(() =>
             {
-                ThrowIfDisposed();
-
                 var length = OpenRawByteSource(entryName).Length;
-                if (length > int.MaxValue)
-                {
-                    throw new ArtifactInspectorException(
-                        "Entry '" + entryName + "' is " + length + " bytes, too large to read into a single byte[] (max " + int.MaxValue + ").");
-                }
-
-                return ReadRawEntry(entryName, 0, (int)length);
-            }
+                return length > int.MaxValue
+                    ? throw new ArtifactInspectorException("Entry '" + entryName + "' is too large to read.")
+                    : ReadRawEntry(entryName, 0, (int)length);
+            });
         }
 
         /// <summary>
@@ -252,13 +217,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
 
-            lock (_lock)
+            return Guarded<IRandomAccessByteSource>(() =>
             {
-                ThrowIfDisposed();
-
                 var fileHandle = GetOrOpenFileHandle(entryName);
                 return new NativeFileByteSource(fileHandle);
-            }
+            });
         }
 
         /// <summary>
@@ -266,15 +229,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// </summary>
         private bool IsPositivelyMissingTypeTrees(string entryName)
         {
-            try
-            {
-                var byteSource = OpenRawByteSource(entryName);
-                return SerializedFileDetector.IsMissingTypeTrees(byteSource);
-            }
-            catch
-            {
-                return false;
-            }
+            return SerializedFileOpener.SafeInvoke(() => SerializedFileDetector.IsMissingTypeTrees(OpenRawByteSource(entryName)));
         }
 
         /// <summary>Returns the cached FileHandle for entryName, opening and caching one if there isn't one.</summary>
@@ -301,7 +256,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                 }
 
                 _openFilesByEntryName.Clear();
-                
+
                 foreach (var serializedFile in _openSerializedFiles)
                 {
                     serializedFile.Invalidate();
@@ -316,6 +271,16 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         private void ThrowIfDisposed()
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ArtifactArchive));
+        }
+
+        /// <summary>Runs body under this instance's lock, after checking it hasn't been disposed.</summary>
+        private T Guarded<T>(Func<T> body)
+        {
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+                return body();
+            }
         }
     }
 }

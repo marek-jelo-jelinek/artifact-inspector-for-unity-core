@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
-using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
 using NUnit.Framework;
 using static Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport.SerializedFileTestFixtures;
@@ -412,9 +411,19 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         }
 
         [Test]
-        public void IsMissingTypeTrees_NullFilePath_ReturnsFalse()
+        public void IsMissingTypeTrees_NullFilePath_ThrowsArgumentNullException()
         {
-            Assert.That(SerializedFileDetector.IsMissingTypeTrees((string)null), Is.False);
+            // A bad path is never swallowed by the string-path convenience overloads, only
+            // format-level detection failures are -- consistent with TryDetect(string, ...) above.
+            Assert.Throws<ArgumentNullException>(() => SerializedFileDetector.IsMissingTypeTrees((string)null));
+        }
+
+        [Test]
+        public void IsMissingTypeTrees_FilePathDoesNotExist_ThrowsInsteadOfReturningFalse()
+        {
+            var missingPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".missing");
+
+            Assert.Throws<FileNotFoundException>(() => SerializedFileDetector.IsMissingTypeTrees(missingPath));
         }
     }
 }

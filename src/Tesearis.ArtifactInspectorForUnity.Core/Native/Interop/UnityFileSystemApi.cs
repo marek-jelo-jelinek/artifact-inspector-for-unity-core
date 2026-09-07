@@ -146,7 +146,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
             byte[] path,
             int pathCapacity,
             byte[] guid,
-            out ExternalReferenceType type);
+            out int type);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate ReturnCode GetObjectCountDelegate(IntPtr serializedFileHandle, out int count);

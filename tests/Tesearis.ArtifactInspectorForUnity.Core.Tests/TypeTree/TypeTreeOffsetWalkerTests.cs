@@ -97,6 +97,16 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
         }
 
         [Test]
+        public void ComputeSize_StringWithNegativeLengthPrefix_Throws()
+        {
+            var stringNode = FakeTypeTreeBuilder.String("s");
+            var buffer = new ByteBufferWriter().WriteInt32(-1).ToArray();
+            var byteSource = new InMemoryByteSource(buffer);
+
+            Assert.Throws<ArtifactInspectorException>(() => TypeTreeOffsetWalker.ComputeSize(stringNode, 0, byteSource));
+        }
+
+        [Test]
         public void ComputeSize_ArrayNodeMissingElementTemplateChild_Throws()
         {
             // Bypasses FakeTypeTreeBuilder.Array (which always produces a well-formed
@@ -144,6 +154,38 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.That((imageData.ByteOffset, imageData.ByteSize), Is.EqualTo((0L, 7L)));
             Assert.That(width.ByteOffset, Is.EqualTo(7L), "m_Width should start right after the real 3-byte payload, not after a fixed 5-byte TypelessData size");
             Assert.That(width.AsInt32(), Is.EqualTo(256));
+        }
+
+        [Test]
+        public void ComputeSize_ModeratelyNestedStructChain_ComputesWithoutThrowing()
+        {
+            var node = BuildNestedStructChain(depth: 20);
+            var byteSource = new InMemoryByteSource(new byte[4]);
+
+            var size = TypeTreeOffsetWalker.ComputeSize(node, 0, byteSource);
+
+            Assert.That(size, Is.EqualTo(4L));
+        }
+
+        [Test]
+        public void ComputeSize_StructChainNestingBeyondMaxDepth_ThrowsInsteadOfOverflowingTheStack()
+        {
+            var node = BuildNestedStructChain(depth: 200);
+            var byteSource = new InMemoryByteSource(new byte[4]);
+
+            Assert.Throws<ArtifactInspectorException>(() => TypeTreeOffsetWalker.ComputeSize(node, 0, byteSource));
+        }
+
+        /// <summary>Builds a straight chain of depth nested single-child structs wrapping one leaf int.</summary>
+        private static TypeTreeNode BuildNestedStructChain(int depth)
+        {
+            var node = FakeTypeTreeBuilder.Int32("leaf");
+            for (var i = 0; i < depth; i++)
+            {
+                node = FakeTypeTreeBuilder.Struct("wrapper" + i, "Wrapper", node);
+            }
+
+            return node;
         }
     }
 }

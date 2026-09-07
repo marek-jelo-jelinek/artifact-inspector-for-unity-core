@@ -33,7 +33,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
 
         private static void AssertThrowsForFlag(TypeTreeFlags flag)
         {
-            Assert.Throws<ArtifactInspectorException>(() => new TypeTreeNode(
+            Assert.Throws<UnsupportedManagedReferenceShapeException>(() => new TypeTreeNode(
                 "field", "ManagedReferenceType", -1, flag, TypeTreeMetaFlags.None,
                 new List<TypeTreeNode>()));
         }

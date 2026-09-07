@@ -41,19 +41,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             }
         }
 
+        /// <summary>
+        /// Convenience overload that opens and owns its own <see cref="FileStreamByteSource"/>. A bad path
+        /// (missing file, denied access, ...) throws normally, same as opening any other file; only
+        /// format-level detection failures return false (never throw), per
+        /// <see cref="IsYamlSerializedFile(IRandomAccessByteSource)"/>.
+        /// </summary>
         public static bool IsYamlSerializedFile(string filePath)
         {
-            if (filePath == null) return false;
-
-            try
-            {
-                using var source = new FileStreamByteSource(filePath);
-                return IsYamlSerializedFile(source);
-            }
-            catch
-            {
-                return false;
-            }
+            return FileStreamByteSourceHelper.WithFileStreamByteSource(filePath, IsYamlSerializedFile);
         }
 
         private static bool HasUtf8Bom(byte[] buffer)

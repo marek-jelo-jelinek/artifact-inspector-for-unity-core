@@ -59,7 +59,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         }
 
         /// <summary>Runs predicate, treating any exception it throws as an inconclusive "no" -- this is a best-effort check.</summary>
-        private static bool SafeInvoke(Func<bool> predicate)
+        internal static bool SafeInvoke(Func<bool> predicate)
         {
             try
             {

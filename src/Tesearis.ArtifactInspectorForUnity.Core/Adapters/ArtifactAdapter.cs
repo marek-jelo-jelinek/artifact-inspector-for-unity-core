@@ -7,6 +7,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
     /// </summary>
     public abstract class ArtifactAdapter<T> : IArtifactAdapter
     {
+        /// <summary>
+        /// The Unity class name this adapter matches by default. Leave unoverridden (null) and override
+        /// <see cref="Matches"/> instead for anything beyond a straight type-name check; an adapter that
+        /// overrides neither never matches anything.
+        /// </summary>
         protected virtual string ClassName => null;
 
         public virtual bool Matches(ArtifactAdapterContext context)

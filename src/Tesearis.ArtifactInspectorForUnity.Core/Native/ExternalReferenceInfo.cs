@@ -7,9 +7,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native
     {
         public string Path { get; }
         public string Guid { get; }
-        public ExternalReferenceType Type { get; }
+        public int Type { get; }
 
-        public ExternalReferenceInfo(string path, string guid, ExternalReferenceType type)
+        public ExternalReferenceInfo(string path, string guid, int type)
         {
             Path = path;
             Guid = guid;

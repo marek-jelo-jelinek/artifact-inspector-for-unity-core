@@ -101,9 +101,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         {
             if ((nodeFlags & ManagedReferenceFlags) != 0)
             {
-                throw new ArtifactInspectorException(
-                    "Type tree node '" + Name + "' (" + TypeName + ") uses an unsupported managed-reference shape " +
-                    "([SerializeReference] polymorphic field) so offsets cannot be computed for this node.");
+                throw new UnsupportedManagedReferenceShapeException(Name, TypeName);
             }
         }
     }

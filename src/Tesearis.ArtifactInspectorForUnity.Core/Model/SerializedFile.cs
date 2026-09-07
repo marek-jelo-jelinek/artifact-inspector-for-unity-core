@@ -47,8 +47,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             _externalReferences = new List<ExternalReference>(externalReferenceCount);
             for (var i = 0; i < externalReferenceCount; i++)
             {
-                var info = _handle.UseHandle((api, h) => api.GetExternalReference(h, i));
-                _externalReferences.Add(new ExternalReference(info.Path, info.Guid, info.Type));
+                var refIndex = i;
+                var info = _handle.UseHandle((api, h) => api.GetExternalReference(h, refIndex));
+                _externalReferences.Add(new ExternalReference(info.Path, info.Guid, (ExternalReferenceType)info.Type));
             }
         }
 
@@ -60,42 +61,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 
         /// <summary>The SerializedFile format version, as reported by <c>UFS_GetSerializedFileVersion</c>.</summary>
         /// <exception cref="NativeFeatureNotSupportedException">The loaded native library doesn't export UFS_GetSerializedFileVersion.</exception>
-        public int Version
+        public int Version => Guarded(() =>
         {
-            get
-            {
-                lock (_lock)
-                {
-                    ThrowIfDisposed();
-                    _version ??= _handle.UseHandle((api, h) => api.GetSerializedFileVersion(h));
-                    return _version.Value;
-                }
-            }
-        }
+            _version ??= _handle.UseHandle((api, h) => api.GetSerializedFileVersion(h));
+            return _version.Value;
+        });
 
-        public IReadOnlyList<ObjectRef> Objects
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    ThrowIfDisposed();
-                    return _objects;
-                }
-            }
-        }
+        public IReadOnlyList<ObjectRef> Objects => Guarded<IReadOnlyList<ObjectRef>>(() => _objects);
 
-        public IReadOnlyList<ExternalReference> ExternalReferences
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    ThrowIfDisposed();
-                    return _externalReferences;
-                }
-            }
-        }
+        public IReadOnlyList<ExternalReference> ExternalReferences => Guarded<IReadOnlyList<ExternalReference>>(() => _externalReferences);
 
         /// <summary>
         /// Every distinct type-tree entry this file declares without needing to already hold a live
@@ -105,34 +79,23 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// <exception cref="NativeFeatureNotSupportedException">
         /// The loaded native library doesn't export UFS_GetTypeTreeCount/UFS_GetTypeTreeInfo.
         /// </exception>
-        public IReadOnlyList<TypeTreeSummary> TypeTrees
+        public IReadOnlyList<TypeTreeSummary> TypeTrees => Guarded<IReadOnlyList<TypeTreeSummary>>(() =>
         {
-            get
+            _typeTrees ??= _handle.UseHandle((api, h) =>
             {
-                lock (_lock)
+                var count = api.GetTypeTreeCount(h);
+                var typeTrees = new List<TypeTreeSummary>(count);
+                for (var i = 0; i < count; i++)
                 {
-                    ThrowIfDisposed();
-
-                    if (_typeTrees == null)
-                    {
-                        _typeTrees = _handle.UseHandle((api, h) =>
-                        {
-                            var count = api.GetTypeTreeCount(h);
-                            var typeTrees = new List<TypeTreeSummary>(count);
-                            for (var i = 0; i < count; i++)
-                            {
-                                var info = api.GetTypeTreeInfo(h, i);
-                                typeTrees.Add(new TypeTreeSummary(i, info));
-                            }
-
-                            return typeTrees;
-                        });
-                    }
-
-                    return _typeTrees;
+                    var info = api.GetTypeTreeInfo(h, i);
+                    typeTrees.Add(new TypeTreeSummary(i, info));
                 }
-            }
-        }
+
+                return typeTrees;
+            });
+
+            return _typeTrees;
+        });
 
         public bool TryGetObject(long pathId, out ObjectRef objectRef)
         {
@@ -162,36 +125,33 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 
         internal TypeTreeReader CreateReader(long pathId, long byteOffset)
         {
-            lock (_lock)
+            return Guarded(() =>
             {
-                ThrowIfDisposed();
-
                 var root = _typeTreeCache.GetOrBuild(_handle, pathId);
                 return new TypeTreeReader(root, _byteSource, byteOffset);
-            }
+            });
         }
 
         /// <summary>The walked type tree for one <see cref="TypeTrees"/> entry, by its <see cref="TypeTreeSummary.Index"/>.</summary>
         /// <exception cref="NativeFeatureNotSupportedException">The loaded native library doesn't export UFS_GetTypeTreeByIndex.</exception>
         public TypeTreeNode GetTypeTreeByIndex(int index)
         {
+            return Guarded(() => _typeTreeCache.GetOrBuildByIndex(_handle, index));
+        }
+
+        /// <summary>Runs body under this instance's lock, after checking it hasn't been disposed.</summary>
+        private T Guarded<T>(Func<T> body)
+        {
             lock (_lock)
             {
                 ThrowIfDisposed();
-                return _typeTreeCache.GetOrBuildByIndex(_handle, index);
+                return body();
             }
         }
 
         public void Dispose()
         {
-            lock (_lock)
-            {
-                if (_disposed) return;
-
-                _disposed = true;
-                _fileHandle.Dispose();
-                _handle.Dispose();
-            }
+            if (!DisposeHandles()) return;
 
             // Invoked outside the lock: this notifies the owning ArtifactArchive (if any) to
             // remove this instance from its tracking set, which takes the archive's own lock.
@@ -200,13 +160,20 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 
         internal void Invalidate()
         {
+            DisposeHandles();
+        }
+
+        /// <summary>Marks this instance disposed and releases its native handles, once. Returns whether this call was the one that did so.</summary>
+        private bool DisposeHandles()
+        {
             lock (_lock)
             {
-                if (_disposed) return;
+                if (_disposed) return false;
 
                 _disposed = true;
                 _fileHandle.Dispose();
                 _handle.Dispose();
+                return true;
             }
         }
 

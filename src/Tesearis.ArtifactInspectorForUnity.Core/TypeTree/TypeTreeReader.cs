@@ -14,22 +14,18 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         private long? _size;
 
         // Struct-field resolution state.
-        private readonly Dictionary<int, (long Offset, long Size)> _resolvedChildren = new();
-        private int _nextUnresolvedChildIndex;
-        private long _nextUnresolvedChildOffset;
+        private readonly OffsetCursor _childCursor;
 
-        // Array-element resolution state, initialized on first use.
-        private readonly Dictionary<int, (long Offset, long Size)> _resolvedElements = new();
-        private int _nextUnresolvedElementIndex;
-        private long _nextUnresolvedElementOffset;
-        private bool _elementResolutionStarted;
+        // Array-element resolution state, initialized lazily on first use (needs ByteOffset + 4,
+        // past the length prefix, which isn't known to be valid until an array access is made).
+        private OffsetCursor _elementCursor;
 
         internal TypeTreeReader(TypeTreeNode node, IRandomAccessByteSource byteSource, long offset)
         {
             _node = node ?? throw new ArgumentNullException(nameof(node));
             _byteSource = byteSource ?? throw new ArgumentNullException(nameof(byteSource));
             ByteOffset = offset;
-            _nextUnresolvedChildOffset = offset;
+            _childCursor = new OffsetCursor(offset);
         }
 
         /// <summary>This field's byte offset into the underlying byte source.</summary>
@@ -75,7 +71,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         public TypeTreeReader Field(string fieldName)
         {
             return !TryGetField(fieldName, out var field)
-                ? throw new ArtifactInspectorException("Field '" + fieldName + "' was not found on type '" + _node.TypeName + "'.")
+                ? throw new ArtifactInspectorException($"Field '{fieldName}' was not found on type '{_node.TypeName}'.")
                 : field;
         }
 
@@ -84,10 +80,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         public int ArrayLength()
         {
             RequireArray();
-            var length = TypeTreeOffsetWalker.ReadInt32LittleEndian(_byteSource, ByteOffset);
-            if (length < 0) throw new ArtifactInspectorException("Negative array length at offset " + ByteOffset + ".");
-            TypeTreeOffsetWalker.RequireCountFitsRemainingBytes(length, ByteOffset + 4, _byteSource);
-            return length;
+            return TypeTreeOffsetWalker.ReadValidatedLengthPrefix(_byteSource, ByteOffset, "array");
         }
 
         /// <summary>The element at <paramref name="index"/> of this array/vector/map-shaped field.</summary>
@@ -97,12 +90,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             if (index < 0) throw new ArgumentOutOfRangeException(nameof(index), index, "Index must not be negative.");
 
             var length = ArrayLength();
-            if (index >= length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index), index, "Index must be less than the array length (" + length + ").");
-            }
-
-            return GetElementByIndex(index);
+            return index >= length
+                ? throw new ArgumentOutOfRangeException(nameof(index), index, $"Index must be less than the array length ({length}).")
+                : GetElementByIndex(index);
         }
 
         /// <summary>Every element of this array/vector/map-shaped field, in order.</summary>
@@ -118,7 +108,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         {
             var size = ByteSize;
             return size > int.MaxValue
-                ? throw new ArtifactInspectorException("Field is too large to read into a single byte[] (" + size + " bytes).")
+                ? throw new ArtifactInspectorException($"Field is too large to read into a single byte[] ({size} bytes).")
                 : ReadRawBytes(0, (int)size);
         }
 
@@ -126,7 +116,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <exception cref="ArtifactInspectorException">The underlying data has fewer than <paramref name="count"/> bytes remaining at <paramref name="relativeOffset"/>.</exception>
         public byte[] ReadRawBytes(long relativeOffset, int count)
         {
-            if (count < 0) throw new ArtifactInspectorException("count must not be negative (" + count + ").");
+            if (count < 0) throw new ArtifactInspectorException($"count must not be negative ({count}).");
             if (count == 0) return Array.Empty<byte>();
 
             TypeTreeOffsetWalker.RequireCountFitsRemainingBytes(count, ByteOffset + relativeOffset, _byteSource);
@@ -134,9 +124,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             var buffer = new byte[count];
             var read = _byteSource.Read(ByteOffset + relativeOffset, buffer, 0, count);
             if (read != count)
+            {
                 throw new ArtifactInspectorException(
-                    "Unexpected end of data while reading " + count + " raw bytes at offset " +
-                    (ByteOffset + relativeOffset) + ".");
+                    $"Unexpected end of data while reading {count} raw bytes at offset {ByteOffset + relativeOffset}.");
+            }
 
             return buffer;
         }
@@ -222,17 +213,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <exception cref="ArtifactInspectorException">The length prefix is negative, or the underlying data is truncated.</exception>
         public string AsString()
         {
-            var length = TypeTreeOffsetWalker.ReadInt32LittleEndian(_byteSource, ByteOffset);
-            if (length < 0) throw new ArtifactInspectorException("Negative string length at offset " + ByteOffset + ".");
+            var length = TypeTreeOffsetWalker.ReadValidatedLengthPrefix(_byteSource, ByteOffset, "string");
             if (length == 0) return string.Empty;
-            TypeTreeOffsetWalker.RequireCountFitsRemainingBytes(length, ByteOffset + 4, _byteSource);
 
             var buffer = new byte[length];
             var read = _byteSource.Read(ByteOffset + 4, buffer, 0, length);
-            if (read != length)
-                throw new ArtifactInspectorException(
-                    "Unexpected end of data while reading a " + length + "-byte string at offset " + (ByteOffset + 4) + ".");
-            return Encoding.UTF8.GetString(buffer);
+            return read != length
+                ? throw new ArtifactInspectorException($"Unexpected end of data while reading a {length}-byte string at offset {ByteOffset + 4}.")
+                : Encoding.UTF8.GetString(buffer);
         }
 
         /// <summary>Reads this field as a PPtr (`m_FileID` + `m_PathID`).</summary>
@@ -246,78 +234,76 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         {
             var buffer = new byte[byteCount];
             var read = _byteSource.Read(ByteOffset, buffer, 0, byteCount);
-            if (read != byteCount)
-                throw new ArtifactInspectorException(
-                    "Unexpected end of data while reading a " + byteCount + "-byte value at offset " + ByteOffset + ".");
-            return convert(buffer, 0);
+            return read != byteCount
+                ? throw new ArtifactInspectorException($"Unexpected end of data while reading a {byteCount}-byte value at offset {ByteOffset}.")
+                : convert(buffer, 0);
         }
 
         private void RequireArray()
         {
-            if (!_node.IsArrayLike) throw new ArtifactInspectorException("Type '" + _node.TypeName + "' is not an array/vector/map field.");
+            if (!_node.IsArrayLike) throw new ArtifactInspectorException($"Type '{_node.TypeName}' is not an array/vector/map field.");
         }
 
         private TypeTreeReader GetChildByIndex(int index)
         {
-            if (_resolvedChildren.TryGetValue(index, out (long Offset, long Size) cached))
-            {
-                return new TypeTreeReader(_node.Children[index], _byteSource, cached.Offset);
-            }
-
-            while (_nextUnresolvedChildIndex <= index)
-            {
-                var child = _node.Children[_nextUnresolvedChildIndex];
-                var childOffset = _nextUnresolvedChildOffset;
-                var childSize = TypeTreeOffsetWalker.ComputeSize(child, childOffset, _byteSource);
-
-                _resolvedChildren[_nextUnresolvedChildIndex] = (childOffset, childSize);
-
-                _nextUnresolvedChildOffset = childOffset + childSize;
-                if (child.IsAligned)
-                {
-                    _nextUnresolvedChildOffset = TypeTreeOffsetWalker.ApplyAlignment(child, _nextUnresolvedChildOffset);
-                }
-
-                _nextUnresolvedChildIndex++;
-            }
-
-            var resolved = _resolvedChildren[index];
-            return new TypeTreeReader(_node.Children[index], _byteSource, resolved.Offset);
+            var offset = _childCursor.ResolveOffset(index, i => _node.Children[i], _byteSource);
+            return new TypeTreeReader(_node.Children[index], _byteSource, offset);
         }
 
         private TypeTreeReader GetElementByIndex(int index)
         {
-            if (!_elementResolutionStarted)
-            {
-                _nextUnresolvedElementOffset = ByteOffset + 4; // past the length prefix
-                _elementResolutionStarted = true;
-            }
-
             if (_node.Children.Count < 2)
             {
                 throw new ArtifactInspectorException(
-                    "Array-like type tree node '" + _node.Name + "' (" + _node.TypeName + ") has " +
-                    _node.Children.Count + " children; expected 2 (size and element template).");
+                    $"Array-like type tree node '{_node.Name}' ({_node.TypeName}) has {_node.Children.Count} children; expected 2 (size and element template).");
             }
 
             var elementTemplate = _node.Children[1];
+            _elementCursor ??= new OffsetCursor(ByteOffset + 4); // past the length prefix
 
-            if (_resolvedElements.TryGetValue(index, out var cached)) return new TypeTreeReader(elementTemplate, _byteSource, cached.Offset);
+            var offset = _elementCursor.ResolveOffset(index, _ => elementTemplate, _byteSource);
+            return new TypeTreeReader(elementTemplate, _byteSource, offset);
+        }
 
-            while (_nextUnresolvedElementIndex <= index)
+        /// <summary>
+        /// Resolves the byte offset of the node at a given index within a sequence (struct fields, or
+        /// array elements) that starts at a fixed offset, walking forward through -- and caching -- every
+        /// lower index first: each node's size must be computed to know where the next one starts, so
+        /// resolving index N inevitably resolves every index below it too. Shared by
+        /// <see cref="GetChildByIndex"/> (a distinct node per index) and <see cref="GetElementByIndex"/>
+        /// (the same element-template node repeated).
+        /// </summary>
+        private sealed class OffsetCursor
+        {
+            private readonly Dictionary<int, long> _resolvedOffsets = new();
+            private int _nextIndex;
+            private long _nextOffset;
+
+            public OffsetCursor(long startOffset)
             {
-                var elementOffset = _nextUnresolvedElementOffset;
-                var elementSize = TypeTreeOffsetWalker.ComputeSize(elementTemplate, elementOffset, _byteSource);
-
-                _resolvedElements[_nextUnresolvedElementIndex] = (elementOffset, elementSize);
-
-                _nextUnresolvedElementOffset = elementOffset + elementSize;
-                if (elementTemplate.IsAligned)
-                    _nextUnresolvedElementOffset = TypeTreeOffsetWalker.ApplyAlignment(elementTemplate, _nextUnresolvedElementOffset);
-                _nextUnresolvedElementIndex++;
+                _nextOffset = startOffset;
             }
 
-            return new TypeTreeReader(elementTemplate, _byteSource, _resolvedElements[index].Offset);
+            public long ResolveOffset(int index, Func<int, TypeTreeNode> nodeAt, IRandomAccessByteSource byteSource)
+            {
+                if (_resolvedOffsets.TryGetValue(index, out var cachedOffset)) return cachedOffset;
+
+                while (_nextIndex <= index)
+                {
+                    var node = nodeAt(_nextIndex);
+                    var offset = _nextOffset;
+                    var size = TypeTreeOffsetWalker.ComputeSize(node, offset, byteSource);
+
+                    _resolvedOffsets[_nextIndex] = offset;
+
+                    _nextOffset = offset + size;
+                    if (node.IsAligned) _nextOffset = TypeTreeOffsetWalker.ApplyAlignment(node, _nextOffset);
+
+                    _nextIndex++;
+                }
+
+                return _resolvedOffsets[index];
+            }
         }
     }
 }

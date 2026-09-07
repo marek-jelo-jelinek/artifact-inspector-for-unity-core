@@ -14,6 +14,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
     /// </summary>
     internal sealed class TypeTreeCache
     {
+        private const int MaxRecursionDepth = 64;
+
         // Keyed by object id, not the native type-tree handle.
         private readonly Dictionary<long, TypeTreeNode> _cacheByObjectId = new();
 
@@ -66,20 +68,26 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             }
         }
 
-        private static TypeTreeNode BuildNode(IUnityFileSystemApi api, IntPtr typeTreeHandle, TypeTreeNodeInfo info)
+        private static TypeTreeNode BuildNode(IUnityFileSystemApi api, IntPtr typeTreeHandle, TypeTreeNodeInfo info, int depth = 0)
         {
-            var children = BuildChildren(api, typeTreeHandle, info.FirstChildNode);
+            if (depth > MaxRecursionDepth)
+            {
+                throw new ArtifactInspectorException(
+                    $"Type tree node '{info.FieldName}' ({info.TypeName}) nests more than {MaxRecursionDepth} levels deep. The type tree is likely malformed or self-referential.");
+            }
+
+            var children = BuildChildren(api, typeTreeHandle, info.FirstChildNode, depth + 1);
             return new TypeTreeNode(info.FieldName, info.TypeName, info.Size, info.Flags, info.MetaFlags, children);
         }
 
-        private static List<TypeTreeNode> BuildChildren(IUnityFileSystemApi api, IntPtr typeTreeHandle, int firstChildIndex)
+        private static List<TypeTreeNode> BuildChildren(IUnityFileSystemApi api, IntPtr typeTreeHandle, int firstChildIndex, int depth)
         {
             var children = new List<TypeTreeNode>();
             var index = firstChildIndex;
             while (index > 0)
             {
                 var info = api.GetTypeTreeNodeInfo(typeTreeHandle, index);
-                children.Add(BuildNode(api, typeTreeHandle, info));
+                children.Add(BuildNode(api, typeTreeHandle, info, depth));
                 index = info.NextNode;
             }
 

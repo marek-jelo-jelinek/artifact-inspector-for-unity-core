@@ -70,8 +70,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
         public ObjectInfo[] GetObjectInfos(IntPtr serializedFileHandle) => Objects.ToArray();
         public IntPtr GetTypeTree(IntPtr serializedFileHandle, long objectId) => NextHandle();
 
+        /// <summary>When set, called instead of the fixed single-leaf-node default -- e.g. to simulate a deeply nested type tree.</summary>
+        public Func<int, TypeTreeNodeInfo> GetTypeTreeNodeInfoOverride { get; set; }
+
         public TypeTreeNodeInfo GetTypeTreeNodeInfo(IntPtr typeTreeHandle, int nodeIndex) =>
-            new TypeTreeNodeInfo("int", "value", 0, 4, TypeTreeFlags.None, TypeTreeMetaFlags.None, firstChildNode: 0, nextNode: 0);
+            GetTypeTreeNodeInfoOverride != null
+                ? GetTypeTreeNodeInfoOverride(nodeIndex)
+                : new TypeTreeNodeInfo("int", "value", 0, 4, TypeTreeFlags.None, TypeTreeMetaFlags.None, firstChildNode: 0, nextNode: 0);
 
         public int GetTypeTreeCount(IntPtr serializedFileHandle)
         {

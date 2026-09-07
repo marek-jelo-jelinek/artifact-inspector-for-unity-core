@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
-using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
 
 namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
@@ -65,13 +64,18 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             return true;
         }
 
-        /// <summary>Convenience overload that opens and owns its own <see cref="FileStreamByteSource"/>.</summary>
+        /// <summary>
+        /// Convenience overload that opens and owns its own <see cref="FileStreamByteSource"/>. A bad path
+        /// (missing file, denied access, ...) throws normally, same as opening any other file; see
+        /// <see cref="TryDetect(IRandomAccessByteSource, out SerializedFileInfo)"/> for what a false/opened
+        /// return means once the file itself is open.
+        /// </summary>
         public static bool TryDetect(string filePath, out SerializedFileInfo info)
         {
-            if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-
-            using var source = new FileStreamByteSource(filePath);
-            return TryDetect(source, out info);
+            SerializedFileInfo result = default; // out parameters can't be captured by the lambda below
+            var detected = FileStreamByteSourceHelper.WithFileStreamByteSource(filePath, source => TryDetect(source, out result));
+            info = result;
+            return detected;
         }
 
         /// <summary>
@@ -97,20 +101,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             }
         }
 
-        /// <summary>Convenience overload that opens and owns its own <see cref="FileStreamByteSource"/>.</summary>
+        /// <summary>
+        /// Convenience overload that opens and owns its own <see cref="FileStreamByteSource"/>. A bad path
+        /// (missing file, denied access, ...) throws normally, same as opening any other file; only
+        /// format-level detection failures return false (never throw), per
+        /// <see cref="IsMissingTypeTrees(IRandomAccessByteSource)"/>.
+        /// </summary>
         public static bool IsMissingTypeTrees(string filePath)
         {
-            try
-            {
-                if (filePath == null) return false;
-
-                using var source = new FileStreamByteSource(filePath);
-                return IsMissingTypeTrees(source);
-            }
-            catch
-            {
-                return false;
-            }
+            return FileStreamByteSourceHelper.WithFileStreamByteSource(filePath, IsMissingTypeTrees);
         }
 
         private static SerializedFileInfo HeaderOnlyInfo(SerializedFileHeader header, string error)

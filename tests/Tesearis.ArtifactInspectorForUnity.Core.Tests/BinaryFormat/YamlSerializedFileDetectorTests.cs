@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
@@ -60,6 +61,22 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
             {
                 File.Delete(path);
             }
+        }
+
+        [Test]
+        public void IsYamlSerializedFile_NullFilePath_ThrowsArgumentNullException()
+        {
+            // A bad path is never swallowed by the string-path convenience overload, only
+            // format-level detection failures are.
+            Assert.Throws<ArgumentNullException>(() => YamlSerializedFileDetector.IsYamlSerializedFile((string)null));
+        }
+
+        [Test]
+        public void IsYamlSerializedFile_FilePathDoesNotExist_ThrowsInsteadOfReturningFalse()
+        {
+            var missingPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".missing");
+
+            Assert.Throws<FileNotFoundException>(() => YamlSerializedFileDetector.IsYamlSerializedFile(missingPath));
         }
     }
 }

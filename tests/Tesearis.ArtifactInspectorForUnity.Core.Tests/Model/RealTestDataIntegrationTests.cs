@@ -207,7 +207,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                     {
                         reader = objectRef.GetReader();
                     }
-                    catch (ArtifactInspectorException ex) when (ex.Message.Contains("managed-reference shape"))
+                    catch (UnsupportedManagedReferenceShapeException)
                     {
                         // Known, documented limitation (see README's "Known limitations"):
                         // [SerializeReference] polymorphic fields aren't decoded, so this

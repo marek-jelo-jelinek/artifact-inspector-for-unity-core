@@ -407,18 +407,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         }
 
         /// <summary>
-        /// Cross-validates SerializedFileDetector's from-scratch parse against
-        /// UnityFileSystemApi's native results for every entry a contributor's TestData/ files
-        /// happen to contain -- no stripped fixture is required for this to be meaningful: any
-        /// entry that natively opens fine and whose version is in this library's supported
-        /// metadata range (19-23) gets its object list and external references compared field by
-        /// field against the native-parsed equivalents, which is a strong correctness check of the
-        /// whole from-scratch parser (including the GUID formatter) against Unity's own results. An
-        /// entry that natively fails to open specifically because it has no TypeTrees is exercised
-        /// for free too, via the new SerializedFileOpenException triage path, if a contributor's
-        /// TestData/ happens to contain one.
-        /// </summary>
-        /// <summary>
         /// The actual cross-validation body of <see cref="SerializedFileDetector_TryDetect_MatchesNativeObjectsAndExternalReferences_ForEveryEntry"/>,
         /// shared between the archive lane (byteSource comes from the mounted archive) and the
         /// loose lane (byteSource reads the file directly).
@@ -459,6 +447,18 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             }
         }
 
+        /// <summary>
+        /// Cross-validates SerializedFileDetector's from-scratch parse against
+        /// UnityFileSystemApi's native results for every entry a contributor's TestData/ files
+        /// happen to contain -- no stripped fixture is required for this to be meaningful: any
+        /// entry that natively opens fine and whose version is in this library's supported
+        /// metadata range (19-23) gets its object list and external references compared field by
+        /// field against the native-parsed equivalents, which is a strong correctness check of the
+        /// whole from-scratch parser (including the GUID formatter) against Unity's own results. An
+        /// entry that natively fails to open specifically because it has no TypeTrees is exercised
+        /// for free too, via the new SerializedFileOpenException triage path, if a contributor's
+        /// TestData/ happens to contain one.
+        /// </summary>
         [Test]
         public void SerializedFileDetector_TryDetect_MatchesNativeObjectsAndExternalReferences_ForEveryEntry()
         {

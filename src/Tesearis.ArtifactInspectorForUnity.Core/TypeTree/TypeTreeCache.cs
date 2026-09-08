@@ -27,11 +27,23 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <summary>Thread-safe.</summary>
         internal TypeTreeNode GetOrBuild(SerializedFileHandle file, long objectId)
         {
+            return GetOrBuild(file, _cacheByObjectId, objectId, (api, h) => api.GetTypeTree(h, objectId));
+        }
+
+        /// <summary>Thread-safe.</summary>
+        internal TypeTreeNode GetOrBuildByIndex(SerializedFileHandle file, int index)
+        {
+            return GetOrBuild(file, _cacheByTypeTreeIndex, index, (api, h) => api.GetTypeTreeByIndex(h, index));
+        }
+
+        private TypeTreeNode GetOrBuild<TKey>(SerializedFileHandle file, Dictionary<TKey, TypeTreeNode> cache, TKey key,
+            Func<IUnityFileSystemApi, IntPtr, IntPtr> resolveTypeTreeHandle)
+        {
             if (file == null) throw new ArgumentNullException(nameof(file));
 
             lock (_lock)
             {
-                if (_cacheByObjectId.TryGetValue(objectId, out var cached)) return cached;
+                if (cache.TryGetValue(key, out var cached)) return cached;
 
                 // The whole recursive tree walk happens inside one UseHandle scope, rather than one
                 // per native call, so a concurrent Dispose() can't free the underlying SerializedFile
@@ -39,31 +51,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 // through.
                 var root = file.UseHandle((api, h) =>
                 {
-                    var typeTreeHandle = api.GetTypeTree(h, objectId);
+                    var typeTreeHandle = resolveTypeTreeHandle(api, h);
                     var rootInfo = api.GetTypeTreeNodeInfo(typeTreeHandle, 0);
                     return BuildNode(api, typeTreeHandle, rootInfo);
                 });
-                _cacheByObjectId[objectId] = root;
-                return root;
-            }
-        }
-
-        /// <summary>Thread-safe.</summary>
-        internal TypeTreeNode GetOrBuildByIndex(SerializedFileHandle file, int index)
-        {
-            if (file == null) throw new ArgumentNullException(nameof(file));
-
-            lock (_lock)
-            {
-                if (_cacheByTypeTreeIndex.TryGetValue(index, out var cached)) return cached;
-
-                var root = file.UseHandle((api, h) =>
-                {
-                    var typeTreeHandle = api.GetTypeTreeByIndex(h, index);
-                    var rootInfo = api.GetTypeTreeNodeInfo(typeTreeHandle, 0);
-                    return BuildNode(api, typeTreeHandle, rootInfo);
-                });
-                _cacheByTypeTreeIndex[index] = root;
+                cache[key] = root;
                 return root;
             }
         }

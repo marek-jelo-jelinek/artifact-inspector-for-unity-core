@@ -1,8 +1,8 @@
 namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 {
     /// <summary>
-    /// Thrown by <see cref="ArtifactArchive.OpenSerializedFile"/> in place of a <see cref="Native.NativeCallException"/>
-    /// specifically when the native open failure is positively confirmed (via
+    /// Thrown by <see cref="ArtifactArchive.OpenSerializedFile"/> and <see cref="ArtifactInspector.OpenSerializedFile"/>
+    /// in place of a <see cref="Native.NativeCallException"/> specifically when the native open failure is positively confirmed (via
     /// <see cref="BinaryFormat.SerializedFileDetector.IsMissingTypeTrees(TypeTree.IRandomAccessByteSource)"/>)
     /// to be caused by the entry lacking TypeTrees.
     /// </summary>

@@ -187,7 +187,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                 var byteSource = OpenRawByteSource(entryName);
                 var buffer = new byte[size];
                 var read = byteSource.Read(offset, buffer, 0, size);
-                return read != size ? throw new ArtifactInspectorException($"Unexpected end of data while from '{entryName}'.") : buffer;
+                return read != size ? throw new ArtifactInspectorException($"Unexpected end of data while reading from '{entryName}'.") : buffer;
             });
         }
 

@@ -65,6 +65,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 var fileSize = ReadUInt64(buffer, 24, needsSwap);
                 var dataOffset = ReadUInt64(buffer, 32, needsSwap);
 
+                // All-ones (ulong.MaxValue) is Unity's on-disk sentinel for "size not populated". fileSize
+                // legitimately carries it to mean "unknown", so the two checks below skip validation against
+                // it rather than rejecting the header. 
                 if (metadataSize == ulong.MaxValue) return false;
                 if (fileSize != ulong.MaxValue && dataOffset > fileSize) return false;
                 if (fileSize != ulong.MaxValue && fileSize > (ulong)source.Length + 1024) return false;

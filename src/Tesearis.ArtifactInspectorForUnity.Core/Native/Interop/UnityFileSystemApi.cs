@@ -529,7 +529,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
             _getTypeTreeByIndex(serializedFileHandle, index, out IntPtr handle).ThrowIfNotSuccess("UFS_GetTypeTreeByIndex");
             return handle;
         }
-        
+
         int IUnityFileSystemApi.GetDllVersion() => GetDllVersion();
         string IUnityFileSystemApi.GetUnityVersion() => GetUnityVersion();
         int IUnityFileSystemApi.GetSerializedFileVersion(IntPtr serializedFileHandle) => GetSerializedFileVersion(serializedFileHandle);

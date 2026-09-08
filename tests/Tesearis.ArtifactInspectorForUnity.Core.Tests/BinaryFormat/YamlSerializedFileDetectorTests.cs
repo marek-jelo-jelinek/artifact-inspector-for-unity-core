@@ -50,17 +50,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         [Test]
         public void IsYamlSerializedFile_FilePathOverload_MatchesByteSourceOverload()
         {
-            var path = Path.GetTempFileName();
-            try
-            {
-                File.WriteAllText(path, "%YAML 1.1\n");
-
-                Assert.That(YamlSerializedFileDetector.IsYamlSerializedFile(path), Is.True);
-            }
-            finally
-            {
-                File.Delete(path);
-            }
+            TempFile.WithContent("%YAML 1.1\n", path => Assert.That(YamlSerializedFileDetector.IsYamlSerializedFile(path), Is.True));
         }
 
         [Test]

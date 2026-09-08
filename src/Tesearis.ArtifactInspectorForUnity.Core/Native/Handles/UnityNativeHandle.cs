@@ -17,7 +17,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Handles
 
         public override bool IsInvalid => handle == IntPtr.Zero;
         protected abstract void Release(IUnityFileSystemApi api);
-        
+
         internal TResult UseHandle<TResult>(Func<IUnityFileSystemApi, IntPtr, TResult> call)
         {
             var acquired = false;

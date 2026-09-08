@@ -10,7 +10,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
     /// The header fields (<see cref="Version"/> through <see cref="IsBigEndian"/>) are always
     /// populated when <see cref="SerializedFileDetector.TryDetect(TypeTree.IRandomAccessByteSource, out SerializedFileInfo)"/>
     /// returns true. The remaining fields require walking the metadata section, which this library
-    /// only knows how to do for format version 23 (Unity 6000.3+).
+    /// only knows how to do for format versions 22 and 23 (Unity 2022.2+).
     /// </summary>
     public readonly struct SerializedFileInfo
     {

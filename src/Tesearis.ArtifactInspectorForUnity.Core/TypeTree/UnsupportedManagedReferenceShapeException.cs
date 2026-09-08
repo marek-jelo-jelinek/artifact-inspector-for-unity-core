@@ -1,9 +1,10 @@
 namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 {
     /// <summary>
-    /// Thrown by <see cref="TypeTreeNode"/>'s constructor when a node uses an unsupported
-    /// managed-reference shape ([SerializeReference] polymorphic field), so its offsets cannot
-    /// be computed. See README's "Known limitations".
+    /// Thrown lazily by <see cref="TypeTreeOffsetWalker.ComputeSize"/> when a node's offset or size
+    /// is actually requested and the node uses an unsupported managed-reference shape
+    /// ([SerializeReference] polymorphic field), so its offsets cannot be computed.
+    /// See README's "Known limitations".
     /// </summary>
     public sealed class UnsupportedManagedReferenceShapeException : ArtifactInspectorException
     {

@@ -367,21 +367,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
             writer.WriteInt32(0).WriteInt32(0).WriteInt32(0).WriteInt32(0);
             var buffer = WrapWithHeader(writer.ToArray(), version: 23, endianness: 0, dataOffset: 0);
 
-            var path = Path.GetTempFileName();
-            try
+            TempFile.WithContent(buffer, path =>
             {
-                File.WriteAllBytes(path, buffer);
-
                 var detected = SerializedFileDetector.TryDetect(path, out var info);
 
                 Assert.That(detected, Is.True);
                 Assert.That(info.MetadataParsed, Is.True);
                 Assert.That(info.EnableTypeTree, Is.False);
-            }
-            finally
-            {
-                File.Delete(path);
-            }
+            });
         }
 
         [Test]
@@ -391,17 +384,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
             AppendLeadingMetadata(metadataBytes, "6000.3.0f1", 5, enableTypeTree: false);
             var buffer = WrapWithHeader(metadataBytes.ToArray(), version: 23, endianness: 0, dataOffset: 0);
 
-            var path = Path.GetTempFileName();
-            try
-            {
-                File.WriteAllBytes(path, buffer);
-
-                Assert.That(SerializedFileDetector.IsMissingTypeTrees(path), Is.True);
-            }
-            finally
-            {
-                File.Delete(path);
-            }
+            TempFile.WithContent(buffer, path => Assert.That(SerializedFileDetector.IsMissingTypeTrees(path), Is.True));
         }
 
         [Test]

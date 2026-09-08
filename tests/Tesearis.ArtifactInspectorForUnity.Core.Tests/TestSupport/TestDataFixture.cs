@@ -22,7 +22,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
             if (!Directory.Exists(folder)) return [];
 
             return Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
-                .Where(path => !Path.GetFileName(path).StartsWith("."))
+                .Where(path => Path.GetRelativePath(folder, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    .All(segment => !segment.StartsWith(".")))
                 .ToArray();
         }
     }

@@ -50,13 +50,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             }
 
             if (!TryParseLeadingMetadata(source, header, out var unityVersion, out var targetPlatform,
-                    out var enableTypeTree, out var leadingError))
+                    out var enableTypeTree, out var bodyStartPosition, out var leadingError))
             {
                 info = HeaderOnlyInfo(header, leadingError);
                 return true;
             }
 
-            ParseExtendedMetadata(source, header, enableTypeTree, out var objects, out var externalReferences);
+            ParseExtendedMetadata(source, header, enableTypeTree, bodyStartPosition, out var objects, out var externalReferences);
 
             info = new SerializedFileInfo(header.Version, header.FileSize,
                 header.MetadataSize, header.DataOffset, header.IsBigEndian, metadataParsed: true,
@@ -92,7 +92,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 if (!SerializedFileHeaderParser.TryParse(source, out var header)) return false;
                 if (!SupportedMetadataVersions.Contains(header.Version)) return false;
 
-                return TryParseLeadingMetadata(source, header, out _, out _, out var enableTypeTree, out _)
+                return TryParseLeadingMetadata(source, header, out _, out _, out var enableTypeTree, out _, out _)
                     && !enableTypeTree;
             }
             catch
@@ -124,14 +124,17 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
         /// Reads the Unity version string, target platform, and EnableTypeTree byte. The cheap
         /// leading portion of the metadata section. Never throws: any failure is reported via the
         /// out error parameter instead, since this is also called from the exception-swallowing
-        /// <see cref="IsMissingTypeTrees(IRandomAccessByteSource)"/> fast path.
+        /// <see cref="IsMissingTypeTrees(IRandomAccessByteSource)"/> fast path. <paramref name="bodyStartPosition"/>
+        /// is the reader position right after these three fields, so <see cref="ParseExtendedMetadata"/>
+        /// can resume from there instead of re-parsing them.
         /// </summary>
         private static bool TryParseLeadingMetadata(IRandomAccessByteSource source, SerializedFileHeader header,
-            out string unityVersion, out uint targetPlatform, out bool enableTypeTree, out string error)
+            out string unityVersion, out uint targetPlatform, out bool enableTypeTree, out long bodyStartPosition, out string error)
         {
             unityVersion = null;
             targetPlatform = 0;
             enableTypeTree = false;
+            bodyStartPosition = header.MetadataStartOffset;
             error = null;
 
             try
@@ -151,6 +154,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 unityVersion = version;
                 targetPlatform = platform;
                 enableTypeTree = typeTree;
+                bodyStartPosition = reader.Position;
                 return true;
             }
             catch (Exception ex)
@@ -163,16 +167,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
         /// <summary>
         /// Walks the type list, object list, script-type list, and external-reference list. Only
         /// called once the leading metadata fields have already parsed successfully.
+        /// <paramref name="bodyStartPosition"/> is the reader position right after those three
+        /// leading fields (Unity version, target platform, EnableTypeTree), as already parsed by
+        /// <see cref="TryParseLeadingMetadata"/> -- avoids re-reading them here.
         /// </summary>
         private static void ParseExtendedMetadata(IRandomAccessByteSource source, SerializedFileHeader header,
-            bool enableTypeTree, out List<StrippedObjectInfo> objects, out List<ExternalReference> externalReferences)
+            bool enableTypeTree, long bodyStartPosition, out List<StrippedObjectInfo> objects, out List<ExternalReference> externalReferences)
         {
-            var reader = new SerializedFileByteReader(source, header.MetadataStartOffset, header.IsBigEndian);
-
-            // Re-walk the three leading fields already validated by TryParseLeadingMetadata.
-            reader.ReadNullTerminatedAsciiString();
-            reader.ReadUInt32();
-            reader.ReadByte();
+            var reader = new SerializedFileByteReader(source, bodyStartPosition, header.IsBigEndian);
 
             // Type list (m_Types) walked only to skip past it correctly and to resolve each
             // object's typeIndex to a persistentTypeID (ClassID); nothing else about a type entry is
@@ -185,7 +187,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             }
 
             var objectCount = ReadNonNegativeCount(reader, "object");
-            objects = new List<StrippedObjectInfo>(objectCount);
+            var pendingObjects = new StrippedObjectInfo[objectCount];
             for (var i = 0; i < objectCount; i++)
             {
                 reader.AlignTo4(header.MetadataStartOffset);
@@ -197,8 +199,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 var typeId = typeIndex >= 0 && typeIndex < typePersistentIds.Length
                     ? typePersistentIds[typeIndex]
                     : typeIndex;
-                var name = StrippedObjectNameReader.TryReadName(source, typeId, byteOffset, byteSize, header.IsBigEndian);
-                objects.Add(new StrippedObjectInfo(pathId, typeId, byteOffset, byteSize, name));
+                pendingObjects[i] = new StrippedObjectInfo(pathId, typeId, byteOffset, byteSize, name: null);
+            }
+
+            objects = new List<StrippedObjectInfo>(objectCount);
+            foreach (var pending in pendingObjects)
+            {
+                var name = StrippedObjectNameReader.TryReadName(source, pending.TypeId, pending.ByteOffset, pending.ByteSize, header.IsBigEndian);
+                objects.Add(name == null ? pending : new StrippedObjectInfo(pending.PathId, pending.TypeId, pending.ByteOffset, pending.ByteSize, name));
             }
 
             // Script-type list parsed only to advance the cursor correctly; not needed by this feature's output, so discarded.

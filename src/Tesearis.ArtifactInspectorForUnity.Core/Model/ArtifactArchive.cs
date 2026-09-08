@@ -19,6 +19,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         private readonly List<string> _entryNames;
         private readonly List<ArchiveEntryInfo> _entries;
         private readonly Dictionary<string, FileHandle> _openFilesByEntryName = new();
+        private readonly Dictionary<string, IRandomAccessByteSource> _byteSourcesByEntryName = new();
         private readonly HashSet<SerializedFile> _openSerializedFiles = new();
 
         private readonly object _lock = new();
@@ -210,18 +211,31 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         }
 
         /// <summary>
-        /// Opens a raw, schema-agnostic byte source for an archive entry.
+        /// Opens a raw, schema-agnostic byte source for an archive entry. Returns the same instance
+        /// for repeated calls with the same <paramref name="entryName"/> (cached alongside its
+        /// <see cref="FileHandle"/>, see <see cref="GetOrOpenFileHandle"/>) rather than minting a
+        /// fresh <see cref="BufferedByteSource"/>/<see cref="NativeFileByteSource"/> pair each time --
+        /// besides avoiding redundant allocation, this keeps every caller reading the same entry
+        /// funneled through one already-locked source instead of several independently-locked ones
+        /// racing against the same underlying native file handle.
         /// </summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
         public IRandomAccessByteSource OpenRawByteSource(string entryName)
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
 
-            return Guarded<IRandomAccessByteSource>(() =>
-            {
-                var fileHandle = GetOrOpenFileHandle(entryName);
-                return new NativeFileByteSource(fileHandle);
-            });
+            return Guarded(() => GetOrOpenByteSource(entryName));
+        }
+
+        /// <summary>Returns the cached byte source for entryName, opening and caching one if there isn't one.</summary>
+        private IRandomAccessByteSource GetOrOpenByteSource(string entryName)
+        {
+            if (_byteSourcesByEntryName.TryGetValue(entryName, out var existing)) return existing;
+
+            var fileHandle = GetOrOpenFileHandle(entryName);
+            var byteSource = new BufferedByteSource(new NativeFileByteSource(fileHandle));
+            _byteSourcesByEntryName[entryName] = byteSource;
+            return byteSource;
         }
 
         /// <summary>
@@ -256,6 +270,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                 }
 
                 _openFilesByEntryName.Clear();
+                _byteSourcesByEntryName.Clear();
 
                 foreach (var serializedFile in _openSerializedFiles)
                 {

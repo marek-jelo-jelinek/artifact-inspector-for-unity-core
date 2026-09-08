@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
+using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
 using NUnit.Framework;
 using static Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport.SerializedFileTestFixtures;
@@ -149,6 +150,59 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
 
             Assert.That(detected, Is.True);
             Assert.That(info.Objects[0].Name, Is.Null);
+        }
+
+        [Test]
+        public void TryDetect_ManyObjectsWithFarApartNameOffsets_DoesNotThrashTheBufferedWindow()
+        {
+            const int objectCount = 20;
+            const int spacing = 70_000; // > BufferedByteSource's 64 KiB window: each name lookup forces its own refill
+            const int nameByteSize = 64; // plenty for the 4-byte length prefix + a short name
+
+            var metadata = new ByteBufferWriter();
+            AppendLeadingMetadata(metadata, "6000.3.13f1", 13, enableTypeTree: false);
+            metadata.WriteInt32(1);
+            AppendTypeEntry(metadata, false, new TypeEntrySpec { PersistentTypeId = 28, ScriptTypeIndex = -1 }); // Texture2D -- name-bearing
+            metadata.WriteInt32(objectCount);
+
+            var nameOffsets = new long[objectCount];
+            for (var i = 0; i < objectCount; i++)
+            {
+                var byteStart = (long)(i + 1) * spacing;
+                nameOffsets[i] = byteStart;
+                AppendObjectEntry(metadata, pathId: i + 1, byteStart: byteStart, byteSize: nameByteSize, typeIndex: 0);
+            }
+
+            metadata.WriteInt32(0); // script types
+            metadata.WriteInt32(0); // external references
+
+            var metadataBytes = metadata.ToArray();
+            const int headerLength = 48;
+            var totalLength = (int)(nameOffsets[^1] + nameByteSize);
+            var buffer = new byte[totalLength];
+
+            var header = BuildHeader(version: 23, endianness: 0, metadataSize: (ulong)metadataBytes.Length,
+                fileSize: (ulong)totalLength, dataOffset: 0, trailingByteCount: 0);
+            Buffer.BlockCopy(header, 0, buffer, 0, header.Length);
+            Buffer.BlockCopy(metadataBytes, 0, buffer, headerLength, metadataBytes.Length);
+
+            for (var i = 0; i < objectCount; i++)
+            {
+                var nameBytes = new ByteBufferWriter().WriteString("Object" + i).ToArray();
+                Buffer.BlockCopy(nameBytes, 0, buffer, (int)nameOffsets[i], nameBytes.Length);
+            }
+
+            var counting = new CountingByteSource(new InMemoryByteSource(buffer));
+            var source = new BufferedByteSource(counting);
+
+            var detected = SerializedFileDetector.TryDetect(source, out var info);
+
+            Assert.That(detected, Is.True);
+            Assert.That(info.MetadataParsed, Is.True);
+            Assert.That(info.Objects.Count, Is.EqualTo(objectCount));
+            Assert.That(info.Objects[5].Name, Is.EqualTo("Object5"));
+
+            Assert.That(counting.ReadCallCount, Is.LessThanOrEqualTo(objectCount + 5));
         }
 
         [Test]

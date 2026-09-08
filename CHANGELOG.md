@@ -21,14 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Deeply nested type trees (>64 levels) now throw instead of risking a stack overflow.
 - `ArtifactArchive` now detects and works around a native mount-path resolution quirk affecting some Unity Editor builds.
 
-### Known issues (not yet resolved)
-
-- Reading field-level data through an archive-mounted entry -- `ArtifactArchive.ReadRawEntry`/`OpenRawByteSource`, or walking a
-  `TypeTreeReader`'s fields (`HasField`/`Field`) -- can crash the host process (a native segfault) for some entries, outside a running Unity
-  Editor (confirmed via a standalone .NET host against real Addressables/AssetBundle output). Doesn't reproduce for a non-archived file, and
-  isn't specific to one class. Listing objects (`SerializedFile.Objects`/`ObjectRef` metadata) doesn't hit this path and hasn't crashed. Needs
-  verification from inside an actual Editor process before this is understood, let alone fixed.
-
 ## [1.0.0] - 2026-08-30
 
 Initial release.

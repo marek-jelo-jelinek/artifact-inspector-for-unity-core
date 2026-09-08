@@ -319,6 +319,12 @@ A few boundaries are intentional, not oversights:
 - **No WebGL bundle support.** Unity WebGL's separate `UnityWebData1.0` container format isn't handled; this is new
   scope, not a gap in existing functionality.
 
+Reading field-level data through an archive-mounted entry (`ArtifactArchive.ReadRawEntry`/`OpenRawByteSource`, or walking a
+`TypeTreeReader`'s fields via `HasField`/`Field`) was previously suspected to crash the host process (a native segfault) for some
+entries, based on a standalone .NET host against real Addressables/AssetBundle output. It hasn't reproduced across multiple builds run
+inside an actual Unity Editor process since, though the root cause was never isolated. If you hit a crash while reading archive-mounted
+entry data, please open an issue with repro details.
+
 See [CHANGELOG.md](CHANGELOG.md) for what's included in each release.
 
 ## Acknowledgments

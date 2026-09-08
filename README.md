@@ -142,9 +142,48 @@ public sealed class AudioClipAdapter : ArtifactAdapter<AudioClipInfo>
   into your own result type first. `Inspect` disposes each `SerializedFile` as it moves on to the next archive entry.
 - Implement `IArtifactAdapter` directly instead of `ArtifactAdapter<T>` only if you need a `struct` result type, or want to skip the
   `ClassName`-based default `Matches`.
+- `IArtifactAdapter.ResultType` (always `typeof(T)` on `ArtifactAdapter<T>`) lets a caller discover what an adapter produces without invoking
+  `Read`, e.g. to list the types a registry can dispatch to, or to filter which adapters apply before running `Inspect` over a large archive.
 
 Registries are ordered, first-match-wins: register more specific adapters before more general ones. `new ArtifactAdapterRegistry()` always
 starts empty; this library bundles no adapters of its own.
+
+### Streamed data
+
+Some object types (textures, meshes, audio clips above a size threshold) don't store their payload inline in the SerializedFile; instead a field
+names an offset/size into a separate, larger file alongside it (e.g. a texture's `.resS` streaming data file next to its `.assets` file). An
+adapter for such a type reads that field itself and hands the caller a `StreamingInfo` (`Offset`, `Size`, `Path`) describing where the real bytes
+live, rather than trying to inline megabytes of pixel/vertex/sample data into its result:
+
+```csharp
+public sealed class Texture2DAdapter : ArtifactAdapter<Texture2DInfo>
+{
+    protected override string ClassName => "Texture2D";
+
+    public override Texture2DInfo Read(ArtifactAdapterContext context)
+    {
+        var reader = context.Reader;
+        var streamData = reader.Field("m_StreamData");
+        var streaming = new StreamingInfo(
+            streamData.Field("offset").AsUInt64(),
+            streamData.Field("size").AsUInt32(),
+            streamData.Field("path").AsString());
+
+        return new Texture2DInfo(reader.Field("m_Name").AsString(), streaming);
+    }
+}
+
+// Caller resolves the streamed bytes through the same archive the object came from:
+if (!string.IsNullOrEmpty(info.Streaming.Path))
+{
+    using var streamSource = context.Archive.OpenRawByteSource(info.Streaming.Path);
+    var pixelBytes = new byte[info.Streaming.Size];
+    streamSource.Read((long)info.Streaming.Offset, pixelBytes, 0, pixelBytes.Length);
+}
+```
+
+An empty `Path` means the payload is inline in the object itself instead (read it directly off `reader`); this library doesn't decide that for
+you, since which field means "streamed" and what an empty path means is specific to each Unity type.
 
 ## Public API
 
@@ -153,9 +192,10 @@ Quick reference; see the examples above for usage, and each type's XML doc comme
 - `ArtifactInspector`: entry point (`OpenAssetBundle`, `SetupLibraryPath`, `AddTypeTreeSource`/`RemoveTypeTreeSource`, native/editor version checks).
 - `ArtifactArchive`, `SerializedFile`, `ObjectRef`, `ExternalReference`, `PPtr`, `ArchiveEntryInfo`, `IRandomAccessByteSource`, `GuidFormatting`: the archive and serialized file model.
 - `TypeTreeReader`, `TypeTreeNode`, `TypeTreeSummary`: lazy, random access field reading.
-- `ArtifactAdapterRegistry`, `IArtifactAdapter`, `ArtifactAdapter<T>`, `ArtifactAdapterContext`, `RawObject`, `StreamingInfo`: the adapter mechanism, see [Custom adapters](#custom-adapters) above.
+- `ArtifactAdapterRegistry`, `IArtifactAdapter`, `ArtifactAdapter<T>`, `ArtifactAdapterContext`, `RawObject`: the adapter mechanism, see [Custom adapters](#custom-adapters) above.
+- `StreamingInfo`: describes an out-of-line payload (offset/size/path) for adapters covering streamed asset types, see [Streamed data](#streamed-data) above.
 - `BinaryFormat.SerializedFileDetector`, `SerializedFileInfo`, `StrippedObjectInfo`, `TypeIdRegistry`, `YamlSerializedFileDetector`: stripped file (no TypeTree) support, see [Stripped files](#stripped-files-no-typetree) below.
-- `ArtifactInspectorException`, `NativeCallException`, `SerializedFileOpenException`, `NativeFeatureNotSupportedException`: the exception hierarchy, see [Exceptions](#exceptions) below.
+- `ArtifactInspectorException`, `NativeCallException`, `SerializedFileOpenException`, `NativeFeatureNotSupportedException`, `UnsupportedManagedReferenceShapeException`: the exception hierarchy, see [Exceptions](#exceptions) below.
 
 ### Stripped files (no TypeTree)
 
@@ -240,6 +280,11 @@ using var archive = ArtifactInspector.OpenAssetBundle("Builds/StandaloneWindows6
   point that isn't present at all in the loaded `UnityFileSystemApi` library (e.g. `AddTypeTreeSource`/`RemoveTypeTreeSource` against a native
   library older than Unity 6.5, or `SerializedFile.TypeTrees`/`GetTypeTreeByIndex` against a native library that doesn't export
   `UFS_GetTypeTreeCount`/`UFS_GetTypeTreeInfo`/`UFS_GetTypeTreeByIndex`); carries `SymbolName`.
+- `TypeTree.UnsupportedManagedReferenceShapeException : ArtifactInspectorException`: thrown when a `[SerializeReference]` polymorphic field's
+  offset or size is actually needed, e.g. reading that field directly, or a sibling positioned after it whose offset can't be resolved without
+  it, see [Known limitations](#known-limitations) below; carries `Name` and `TypeName`. Merely containing such a field elsewhere in an object's
+  schema doesn't throw: `ObjectRef.GetReader()` still succeeds, and every other field remains readable. `ArtifactAdapterRegistry.Adapt`/`Inspect`
+  catch this and fall back to a `RawObject` instead of propagating it.
 
 ## Resource management
 
@@ -268,9 +313,9 @@ values, so any real data works. Neither of these folders' contents are committed
 
 A few boundaries are intentional, not oversights:
 
-- **`[SerializeReference]` fields aren't decoded.** Unity's polymorphic managed-reference shapes aren't readable via
-  the type-tree walk this library uses; `TypeTreeNode` deliberately throws `ArtifactInspectorException` rather than
-  silently misreading them.
+- **`[SerializeReference]` fields aren't decoded.** Unity's polymorphic managed-reference shapes aren't readable via the type-tree walk this
+  library uses; reading one such field (or a sibling positioned after it) throws `UnsupportedManagedReferenceShapeException` instead of
+  misreading it -- see [Exceptions](#exceptions). Every other field remains readable.
 - **No WebGL bundle support.** Unity WebGL's separate `UnityWebData1.0` container format isn't handled; this is new
   scope, not a gap in existing functionality.
 

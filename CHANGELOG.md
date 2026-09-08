@@ -6,35 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `SerializedFileDetector.IsMissingTypeTrees` / `YamlSerializedFileDetector.IsYamlSerializedFile` now throw on invalid paths instead of returning `false`.
+- **Breaking:** `ExternalReferenceType` moved from `Native` to `Model` namespace.
+- `TypeTreeNode` no longer throws eagerly for unsupported `[SerializeReference]` shapes; the error is now deferred until that field is read.
+
+### Added
+
+- `TypeTree.UnsupportedManagedReferenceShapeException`: typed exception for unsupported `[SerializeReference]` shapes.
+
 ### Fixed
 
-- `ArtifactArchive` now probes, once per mounted archive, whether the loaded native `UnityFileSystemApi`
-  actually honors the mount-point identifier passed to `UFS_MountArchive` when later resolving
-  `UFS_OpenFile`/`UFS_OpenSerializedFile` virtual paths. At least one real build (confirmed on Unity
-  6000.3.13f1's macOS Editor) mounts an archive and lists its nodes fine via the handle-based calls, but
-  silently ignores that identifier for path *resolution*: every `"archive:"` virtual path resolves through
-  one flat, un-namespaced root instead, so the previously-hardcoded mount-scoped form
-  (`"archive://<guid>/CAB-xxx"`) 404s there, while the bare form (`"archive:/CAB-xxx"`) opens fine. This made
-  every `SerializedFile` entry inside every mounted archive fail to open on that native library -- confirmed
-  against real Addressables/AssetBundle output, where `ArtifactArchive.OpenSerializedFile` failed for every
-  single entry in every single bundle. The probe is deliberately a single `UFS_OpenFile`/`UFS_CloseFile`
-  round-trip against the archive's first entry (not `UFS_OpenSerializedFile`, which can legitimately fail for
-  an unrelated reason -- a stripped, no-TypeTree entry -- regardless of which virtual-path form is correct),
-  cached for the lifetime of the `ArtifactArchive`, rather than retried per call: repeatedly issuing a native
-  open already known to fail was observed to eventually crash the native library's process outright.
+- Deeply nested type trees (>64 levels) now throw instead of risking a stack overflow.
+- `ArtifactArchive` now detects and works around a native mount-path resolution quirk affecting some Unity Editor builds.
 
 ### Known issues (not yet resolved)
 
-- Even with the fix above, standalone testing against real Addressables/AssetBundle archives (outside a
-  running Unity Editor, driving the same native library directly) found that reading actual field-level data
-  through an archive-mounted `FileHandle` -- `ArtifactArchive.ReadRawEntry`/`OpenRawByteSource` (used by every
-  adapter's `ReadRawData`), and even just walking a `TypeTreeReader`'s field structure (`HasField`/`Field`,
-  needed by every typed adapter) -- can crash the host process (a native segfault) for some entries, in ways
-  that don't reproduce for a plain non-archived file and aren't specific to any one class. Listing objects
-  (class name, byte size, `SerializedFile.Objects`/`ObjectRef` metadata) does not hit this path and was not
-  observed to crash. Needs verification from inside an actual running Unity Editor process (this reproduction
-  used a standalone .NET host loading the native library directly) before this can be considered understood,
-  let alone fixed.
+- Reading field-level data through an archive-mounted entry -- `ArtifactArchive.ReadRawEntry`/`OpenRawByteSource`, or walking a
+  `TypeTreeReader`'s fields (`HasField`/`Field`) -- can crash the host process (a native segfault) for some entries, outside a running Unity
+  Editor (confirmed via a standalone .NET host against real Addressables/AssetBundle output). Doesn't reproduce for a non-archived file, and
+  isn't specific to one class. Listing objects (`SerializedFile.Objects`/`ObjectRef` metadata) doesn't hit this path and hasn't crashed. Needs
+  verification from inside an actual Editor process before this is understood, let alone fixed.
 
 ## [1.0.0] - 2026-08-30
 

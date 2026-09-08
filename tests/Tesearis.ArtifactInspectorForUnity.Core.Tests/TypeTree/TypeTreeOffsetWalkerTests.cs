@@ -176,6 +176,43 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.Throws<ArtifactInspectorException>(() => TypeTreeOffsetWalker.ComputeSize(node, 0, byteSource));
         }
 
+        [Test]
+        public void ComputeSize_ManagedReferenceShapedNode_Throws()
+        {
+            var node = FakeTypeTreeBuilder.ManagedReference("field");
+            var byteSource = new InMemoryByteSource(new byte[4]);
+
+            Assert.Throws<UnsupportedManagedReferenceShapeException>(() => TypeTreeOffsetWalker.ComputeSize(node, 0, byteSource));
+        }
+
+        [Test]
+        public void GetChildByIndex_MonoBehaviourShapedTree_BaseFieldsBeforeManagedReferenceFieldAreReadable()
+        {
+            // Base MonoBehaviour fields declared before a user [SerializeReference] field, matching
+            // Unity's real serialization order: reading them must not require sizing the field after them.
+            var structNode = FakeTypeTreeBuilder.Struct(
+                "Base", "MonoBehaviour",
+                FakeTypeTreeBuilder.Int32("m_GameObject"),
+                FakeTypeTreeBuilder.Bool("m_Enabled"),
+                FakeTypeTreeBuilder.ManagedReference("m_UserField"));
+
+            var buffer = new byte[5]; // m_GameObject(4) + m_Enabled(1); m_UserField's bytes are unreachable here
+            var byteSource = new InMemoryByteSource(buffer);
+            var reader = new TypeTreeReader(structNode, byteSource, 0);
+
+            Assert.DoesNotThrow(() =>
+            {
+                var gameObject = reader.Field("m_GameObject");
+                var enabled = reader.Field("m_Enabled");
+                Assert.That((gameObject.ByteOffset, gameObject.ByteSize), Is.EqualTo((0L, 4L)));
+                Assert.That((enabled.ByteOffset, enabled.ByteSize), Is.EqualTo((4L, 1L)));
+            });
+
+            // Resolving m_UserField's own offset still needs its size (to know where the *next*
+            // field would start), so touching it -- unlike its unrelated earlier siblings -- throws.
+            Assert.Throws<UnsupportedManagedReferenceShapeException>(() => reader.Field("m_UserField"));
+        }
+
         /// <summary>Builds a straight chain of depth nested single-child structs wrapping one leaf int.</summary>
         private static TypeTreeNode BuildNestedStructChain(int depth)
         {

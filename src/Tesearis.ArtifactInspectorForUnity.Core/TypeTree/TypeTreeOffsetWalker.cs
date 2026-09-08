@@ -12,6 +12,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         {
             if (node == null) throw new ArgumentNullException(nameof(node));
             RequireDepthWithinLimit(depth, node);
+            if (node.HasUnsupportedManagedReferenceShape) throw new UnsupportedManagedReferenceShapeException(node.Name, node.TypeName);
             if (node.IsArrayLike) return ComputeArraySize(node, offset, byteSource, depth);
             if (node.TypeName == "string") return 4 + ReadValidatedLengthPrefix(byteSource, offset, "string");
             if (node.Children.Count == 0)

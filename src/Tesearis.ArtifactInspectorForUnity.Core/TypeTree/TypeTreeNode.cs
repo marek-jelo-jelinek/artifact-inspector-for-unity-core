@@ -27,6 +27,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <summary>True when this node is an array: its data is [sizeNode, elementTemplateNode].</summary>
         public bool IsArrayLike { get; }
 
+        /// <summary>
+        /// True when this node uses an unsupported managed-reference shape ([SerializeReference]
+        /// polymorphic field). Construction still succeeds; <see cref="TypeTreeOffsetWalker.ComputeSize"/>
+        /// throws <see cref="UnsupportedManagedReferenceShapeException"/> if this node's size is ever
+        /// actually needed.
+        /// </summary>
+        public bool HasUnsupportedManagedReferenceShape { get; }
+
         public IReadOnlyList<TypeTreeNode> Children { get; }
 
         internal TypeTreeNode(
@@ -42,7 +50,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             ByteSize = byteSize;
             Flags = flags;
             MetaFlags = metaFlags;
-            RequireNoManagedReferenceFlags(flags);
+            HasUnsupportedManagedReferenceShape = (flags & ManagedReferenceFlags) != 0;
 
             var rawChildren = children ?? new List<TypeTreeNode>();
             if (rawChildren.Count == 1 && rawChildren[0].TypeName == ArrayTypeName)
@@ -95,14 +103,5 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
         private const TypeTreeFlags ManagedReferenceFlags =
             TypeTreeFlags.IsManagedReference | TypeTreeFlags.IsManagedReferenceRegistry | TypeTreeFlags.IsArrayOfRefs;
-
-        /// <summary>Throws if the node uses an unsupported managed-reference shape.</summary>
-        private void RequireNoManagedReferenceFlags(TypeTreeFlags nodeFlags)
-        {
-            if ((nodeFlags & ManagedReferenceFlags) != 0)
-            {
-                throw new UnsupportedManagedReferenceShapeException(Name, TypeName);
-            }
-        }
     }
 }

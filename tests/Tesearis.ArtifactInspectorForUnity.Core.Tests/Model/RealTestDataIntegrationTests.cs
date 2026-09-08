@@ -202,10 +202,17 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                     var objectLabel = $"{label} :: pathId {objectRef.PathId}";
                     Assert.That(objectRef.ByteSize, Is.GreaterThanOrEqualTo(0), objectLabel);
 
-                    TypeTreeReader reader;
                     try
                     {
-                        reader = objectRef.GetReader();
+                        var reader = objectRef.GetReader();
+                        Assert.That(reader.TypeName, Is.Not.Null.And.Not.Empty, objectLabel);
+
+                        if (reader.HasField("m_Name"))
+                        {
+                            // Just prove it can be read without throwing. The actual name is
+                            // arbitrary user data, not something to assert a specific value for.
+                            Assert.DoesNotThrow(() => reader.Field("m_Name").AsString(), objectLabel);
+                        }
                     }
                     catch (UnsupportedManagedReferenceShapeException)
                     {
@@ -213,20 +220,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                         // [SerializeReference] polymorphic fields aren't decoded, so this
                         // object's offsets can't be computed -- nothing to structurally
                         // validate for it.
-                        continue;
+                        // ignore
                     }
                     catch (NativeCallException ex) when (IsKnownLooseFileTypeTreeLimitation(isLooseFile, ex))
                     {
-                        continue;
-                    }
-
-                    Assert.That(reader.TypeName, Is.Not.Null.And.Not.Empty, objectLabel);
-
-                    if (reader.HasField("m_Name"))
-                    {
-                        // Just prove it can be read without throwing -- the actual name is
-                        // arbitrary user data, not something to assert a specific value for.
-                        Assert.DoesNotThrow(() => reader.Field("m_Name").AsString(), objectLabel);
+                        // ignore
                     }
                 }
             }

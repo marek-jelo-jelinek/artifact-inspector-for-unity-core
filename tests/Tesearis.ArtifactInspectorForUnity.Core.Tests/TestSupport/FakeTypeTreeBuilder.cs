@@ -89,5 +89,17 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
                 aligned ? TypeTreeMetaFlags.AlignBytes : TypeTreeMetaFlags.None,
                 new List<TypeTreeNode> { Int32("size"), Byte("data") });
         }
+
+        /// <summary>
+        /// A leaf carrying <see cref="TypeTreeFlags.IsManagedReference"/>, simulating a
+        /// [SerializeReference] polymorphic field -- <see cref="TypeTreeNode.HasUnsupportedManagedReferenceShape"/>
+        /// is set, but construction itself never throws.
+        /// </summary>
+        internal static TypeTreeNode ManagedReference(string name)
+        {
+            return new TypeTreeNode(
+                name, "managedReference", -1, TypeTreeFlags.IsManagedReference, TypeTreeMetaFlags.None,
+                new List<TypeTreeNode>());
+        }
     }
 }

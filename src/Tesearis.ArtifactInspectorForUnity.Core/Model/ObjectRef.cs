@@ -27,7 +27,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 
         public TypeTreeReader GetReader()
         {
-            return _owner.CreateReader(PathId, ByteOffset);
+            return _owner.CreateReader(PathId, TypeId, ByteOffset);
         }
 
         /// <summary>

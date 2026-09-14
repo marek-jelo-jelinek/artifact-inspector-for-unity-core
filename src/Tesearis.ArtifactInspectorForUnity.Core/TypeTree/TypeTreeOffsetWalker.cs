@@ -49,6 +49,20 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             var elementTemplate = arrayNode.Children[1];
             var count = ReadValidatedLengthPrefix(byteSource, offset, "array");
 
+            // Fast path: if every element has a statically known constant size we can skip the per-element
+            // loop entirely and compute the total array size with a single multiplication.  This is the
+            // common case for primitive buffers (UInt8[], UInt16[], float[]) and fixed structs (Vector3[],
+            // etc.) such as mesh vertex/index buffers, which can be hundreds of thousands of elements long.
+            if (TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            {
+                // Account for per-element alignment padding (rare for primitive element types, but correct).
+                var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
+                var totalDataBytes = (long)count * stride;
+                RequireCountFitsRemainingBytes(totalDataBytes, offset + 4, byteSource);
+                return 4 + totalDataBytes;
+            }
+
+            // Slow path: variable-size elements — walk element by element.
             var currentOffset = offset + 4;
             for (var i = 0; i < count; i++)
             {
@@ -58,6 +72,41 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             }
 
             return currentOffset - offset;
+        }
+
+        /// <summary>
+        /// Returns true and sets <paramref name="elementSize"/> to the constant serialized byte size of
+        /// <paramref name="node"/> when that size is statically known without reading any stream data.
+        /// Returns false for arrays, strings, managed references, and any struct containing such members.
+        /// </summary>
+        internal static bool TryGetConstantElementSize(TypeTreeNode node, out long elementSize)
+        {
+            elementSize = 0;
+
+            // Arrays/strings/managed-references have variable size — cannot shortcut.
+            if (node.IsArrayLike) return false;
+            if (node.TypeName == "string") return false;
+            if (node.HasUnsupportedManagedReferenceShape) return false;
+
+            // Leaf node with a fixed native byte size reported directly by Unity.
+            if (node.Children.Count == 0)
+            {
+                if (node.HasVariableByteSize) return false;
+                elementSize = node.ByteSize;
+                return true;
+            }
+
+            // Struct: sum all children recursively; bail out on the first variable child.
+            long total = 0;
+            foreach (var child in node.Children)
+            {
+                if (!TryGetConstantElementSize(child, out var childSize)) return false;
+                total += childSize;
+                if (child.IsAligned) total = (total + 3) & ~3L;
+            }
+
+            elementSize = total;
+            return true;
         }
 
         /// <summary>Throws if depth exceeds <see cref="MaxRecursionDepth"/>, instead of recursing into a corrupt/self-referential shape until the stack overflows.</summary>

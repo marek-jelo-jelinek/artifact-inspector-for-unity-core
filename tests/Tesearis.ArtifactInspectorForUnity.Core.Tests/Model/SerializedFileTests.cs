@@ -179,5 +179,35 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             Assert.That(result.Failures[0].PathId, Is.EqualTo(1));
             Assert.That(result.Failures[0].Error, Is.InstanceOf<UnsupportedManagedReferenceShapeException>());
         }
+
+        [Test]
+        public void GetReader_ManyGameObjectsSharedSchema_DedupesNativeTypeTreeCalls()
+        {
+            const int gameObjectTypeId = 1;
+            const int monoBehaviourTypeId = 114;
+            const int gameObjectCount = 5000;
+            const int monoBehaviourCount = 3;
+
+            var api = new FakeUnityFileSystemApi();
+            for (var i = 0; i < gameObjectCount; i++)
+            {
+                api.Objects.Add(new ObjectInfo { Id = i, Offset = 0, Size = 0, TypeId = gameObjectTypeId });
+            }
+            for (var i = 0; i < monoBehaviourCount; i++)
+            {
+                api.Objects.Add(new ObjectInfo { Id = gameObjectCount + i, Offset = 0, Size = 0, TypeId = monoBehaviourTypeId });
+            }
+
+            var serializedFile = Create(api);
+            foreach (var objectRef in serializedFile.Objects)
+            {
+                objectRef.GetReader();
+            }
+
+            // GameObjects (a fixed-schema ClassID) share one native walk; MonoBehaviours (schema
+            // varies per script) each still pay their own -- proves the cache dispatch wired through
+            // ObjectRef.GetReader -> SerializedFile.CreateReader -> TypeTreeCache.GetOrBuild correctly.
+            Assert.That(api.GetTypeTreeCallCount, Is.EqualTo(1 + monoBehaviourCount));
+        }
     }
 }

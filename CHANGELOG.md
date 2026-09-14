@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Deeply nested type trees (>64 levels) now throw instead of risking a stack overflow.
 - `ArtifactArchive` now detects and works around a native mount-path resolution quirk affecting some Unity Editor builds.
+- `TypeTreeCache` no longer re-walks a full native type tree per object; objects of the same ClassID (every type except MonoBehaviour, whose type tree varies per script) now share one cached walk, eliminating an O(object count) native-call cost that dominated large-scene scans.
 
 ## [1.0.0] - 2026-08-30
 

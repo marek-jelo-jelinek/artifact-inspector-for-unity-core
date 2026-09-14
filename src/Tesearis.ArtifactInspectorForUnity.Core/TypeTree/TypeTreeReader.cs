@@ -259,10 +259,20 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             }
 
             var elementTemplate = _node.Children[1];
-            _elementCursor ??= new OffsetCursor(ByteOffset + 4); // past the length prefix
 
-            var offset = _elementCursor.ResolveOffset(index, _ => elementTemplate, _byteSource);
-            return new TypeTreeReader(elementTemplate, _byteSource, offset);
+            // Fast path: if the element has a constant size, its offset is a simple multiplication —
+            // no cursor advancement or prior-element reads required.
+            if (TypeTreeOffsetWalker.TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            {
+                var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
+                var offset = ByteOffset + 4 + (long)index * stride;
+                return new TypeTreeReader(elementTemplate, _byteSource, offset);
+            }
+
+            // Slow path: variable-size elements — advance the cursor.
+            _elementCursor ??= new OffsetCursor(ByteOffset + 4); // past the length prefix
+            var cursorOffset = _elementCursor.ResolveOffset(index, _ => elementTemplate, _byteSource);
+            return new TypeTreeReader(elementTemplate, _byteSource, cursorOffset);
         }
 
         /// <summary>

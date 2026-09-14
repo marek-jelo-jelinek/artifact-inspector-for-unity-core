@@ -128,11 +128,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             return false;
         }
 
-        internal TypeTreeReader CreateReader(long pathId, long byteOffset)
+        internal TypeTreeReader CreateReader(long pathId, int typeId, long byteOffset)
         {
             return Guarded(() =>
             {
-                var root = _typeTreeCache.GetOrBuild(_handle, pathId);
+                var root = _typeTreeCache.GetOrBuild(_handle, pathId, typeId);
                 return new TypeTreeReader(root, _byteSource, byteOffset);
             });
         }
@@ -237,7 +237,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// <summary>Builds one object's snapshot and caches it. Caller must hold <see cref="_lock"/>.</summary>
         private ObjectSnapshot BuildAndCacheSnapshot(ObjectRef objectRef, MaterializeOptions options)
         {
-            var root = _typeTreeCache.GetOrBuild(_handle, objectRef.PathId);
+            var root = _typeTreeCache.GetOrBuild(_handle, objectRef.PathId, objectRef.TypeId);
             var rootField = SnapshotBuilder.Build(root, objectRef.ByteOffset, _byteSource, options);
             var snapshot = new ObjectSnapshot(objectRef.PathId, objectRef.TypeId, objectRef.ByteOffset, objectRef.ByteSize, rootField);
 

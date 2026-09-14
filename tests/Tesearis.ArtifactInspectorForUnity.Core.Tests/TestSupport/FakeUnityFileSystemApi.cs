@@ -105,15 +105,38 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
         public ExternalReferenceInfo GetExternalReference(IntPtr serializedFileHandle, int index) => ExternalReferences[index];
         public int GetObjectCount(IntPtr serializedFileHandle) => Objects.Count;
         public ObjectInfo[] GetObjectInfos(IntPtr serializedFileHandle) => Objects.ToArray();
-        public IntPtr GetTypeTree(IntPtr serializedFileHandle, long objectId) => NextHandle();
+        public int GetTypeTreeCallCount { get; private set; }
+        public int GetTypeTreeNodeInfoCallCount { get; private set; }
+
+        /// <summary>Correlates a fake typeTreeHandle (as returned by GetTypeTree) back to which objectId
+        /// requested it, so a test can make GetTypeTreeNodeInfo answer differently per object -- e.g. to
+        /// prove distinct-schema MonoBehaviour instances aren't collided by a TypeId-keyed cache.</summary>
+        public Dictionary<IntPtr, long> TypeTreeHandleToObjectId { get; } = new();
+
+        public IntPtr GetTypeTree(IntPtr serializedFileHandle, long objectId)
+        {
+            GetTypeTreeCallCount++;
+            var handle = NextHandle();
+            TypeTreeHandleToObjectId[handle] = objectId;
+            return handle;
+        }
 
         /// <summary>When set, called instead of the fixed single-leaf-node default -- e.g. to simulate a deeply nested type tree.</summary>
         public Func<int, TypeTreeNodeInfo> GetTypeTreeNodeInfoOverride { get; set; }
 
-        public TypeTreeNodeInfo GetTypeTreeNodeInfo(IntPtr typeTreeHandle, int nodeIndex) =>
-            GetTypeTreeNodeInfoOverride != null
+        /// <summary>Like <see cref="GetTypeTreeNodeInfoOverride"/>, but also given the typeTreeHandle so a
+        /// test can look up (via <see cref="TypeTreeHandleToObjectId"/>) which object a walk belongs to and
+        /// answer per-object. Checked first; falls back to <see cref="GetTypeTreeNodeInfoOverride"/> when null.</summary>
+        public Func<IntPtr, int, TypeTreeNodeInfo> GetTypeTreeNodeInfoByHandleOverride { get; set; }
+
+        public TypeTreeNodeInfo GetTypeTreeNodeInfo(IntPtr typeTreeHandle, int nodeIndex)
+        {
+            GetTypeTreeNodeInfoCallCount++;
+            if (GetTypeTreeNodeInfoByHandleOverride != null) return GetTypeTreeNodeInfoByHandleOverride(typeTreeHandle, nodeIndex);
+            return GetTypeTreeNodeInfoOverride != null
                 ? GetTypeTreeNodeInfoOverride(nodeIndex)
                 : new TypeTreeNodeInfo("int", "value", 0, 4, TypeTreeFlags.None, TypeTreeMetaFlags.None, firstChildNode: 0, nextNode: 0);
+        }
 
         public int GetTypeTreeCount(IntPtr serializedFileHandle)
         {

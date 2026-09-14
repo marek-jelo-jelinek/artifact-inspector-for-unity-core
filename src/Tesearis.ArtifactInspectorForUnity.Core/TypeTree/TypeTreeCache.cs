@@ -16,18 +16,37 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
     {
         private const int MaxRecursionDepth = 64;
 
-        // Keyed by object id, not the native type-tree handle.
+        // Unity's on-disk ClassID for MonoBehaviour. A MonoBehaviour's type tree embeds that
+        // specific script's own serialized public fields, so two MonoBehaviour instances sharing
+        // this ClassID can have genuinely different schemas -- unlike every other ClassID, whose
+        // schema is fixed per file. This is the only confirmed per-instance-schema ClassID
+        // (checked TypeIdRegistry and the [SerializeReference]/RefType handling in SnapshotBuilder/
+        // TypeTreeOffsetWalker: those vary individual field shapes, not a whole ClassID's top-level
+        // node tree). MonoBehaviour objects must keep going through the per-object cache below.
+        private const int MonoBehaviourTypeId = 114;
+
+        // Keyed by object id, not the native type-tree handle. Used only for classes whose schema
+        // can vary per instance (see MonoBehaviourTypeId) -- the safe-but-slower fallback.
         private readonly Dictionary<long, TypeTreeNode> _cacheByObjectId = new();
+
+        // Keyed by ClassID (ObjectRef.TypeId), for classes whose on-disk type tree is provably
+        // identical across every instance within one SerializedFile (i.e. everything except
+        // MonoBehaviour). Distinct identifier space from _cacheByObjectId and _cacheByTypeTreeIndex.
+        private readonly Dictionary<int, TypeTreeNode> _cacheByTypeId = new();
 
         // Keyed by type-tree index (SerializedFile.TypeTrees / GetTypeTreeByIndex).
         private readonly Dictionary<int, TypeTreeNode> _cacheByTypeTreeIndex = new();
 
         private readonly object _lock = new();
 
+        private static bool CanShareAcrossInstances(int typeId) => typeId != MonoBehaviourTypeId;
+
         /// <summary>Thread-safe.</summary>
-        internal TypeTreeNode GetOrBuild(SerializedFileHandle file, long objectId)
+        internal TypeTreeNode GetOrBuild(SerializedFileHandle file, long objectId, int typeId)
         {
-            return GetOrBuild(file, _cacheByObjectId, objectId, (api, h) => api.GetTypeTree(h, objectId));
+            return CanShareAcrossInstances(typeId)
+                ? GetOrBuild(file, _cacheByTypeId, typeId, (api, h) => api.GetTypeTree(h, objectId))
+                : GetOrBuild(file, _cacheByObjectId, objectId, (api, h) => api.GetTypeTree(h, objectId));
         }
 
         /// <summary>Thread-safe.</summary>

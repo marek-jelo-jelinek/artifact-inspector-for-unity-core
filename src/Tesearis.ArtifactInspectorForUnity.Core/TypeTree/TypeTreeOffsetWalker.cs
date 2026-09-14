@@ -13,6 +13,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             if (node == null) throw new ArgumentNullException(nameof(node));
             RequireDepthWithinLimit(depth, node);
             if (node.HasUnsupportedManagedReferenceShape) throw new UnsupportedManagedReferenceShapeException(node.Name, node.TypeName);
+
+            // Fast path: if this node's serialized size is statically known (no arrays, strings, or
+            // managed references anywhere in its subtree), skip all recursion and byte-source reads.
+            // TypeTreeNode caches this result so the first call warms it for every subsequent call on
+            // the same node — including the same node used by many objects of the same type
+            // (TypeTreeCache shares node instances across all objects of a given type).
+            if (node.TryGetConstantByteSize(out var knownSize)) return knownSize;
+
             if (node.IsArrayLike) return ComputeArraySize(node, offset, byteSource, depth);
             if (node.TypeName == "string") return 4 + ReadValidatedLengthPrefix(byteSource, offset, "string");
             if (node.Children.Count == 0)
@@ -77,9 +85,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <summary>
         /// Returns true and sets <paramref name="elementSize"/> to the constant serialized byte size of
         /// <paramref name="node"/> when that size is statically known without reading any stream data.
-        /// Returns false for arrays, strings, managed references, and any struct containing such members.
+        /// Returns false for arrays, strings, managed references, any struct containing such members,
+        /// and any struct nested deeper than <see cref="MaxRecursionDepth"/> levels (which would be
+        /// caught and thrown by <see cref="ComputeSize"/> anyway — returning false here lets that path
+        /// handle the error rather than silently caching the result of a too-deep tree).
         /// </summary>
-        internal static bool TryGetConstantElementSize(TypeTreeNode node, out long elementSize)
+        internal static bool TryGetConstantElementSize(TypeTreeNode node, out long elementSize, int depth = 0)
         {
             elementSize = 0;
 
@@ -96,11 +107,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 return true;
             }
 
+            // Guard against pathologically deep struct chains: ComputeSize throws for depth > MaxRecursionDepth,
+            // so returning false here lets that existing check fire rather than caching a misleading result.
+            if (depth > MaxRecursionDepth) return false;
+
             // Struct: sum all children recursively; bail out on the first variable child.
             long total = 0;
             foreach (var child in node.Children)
             {
-                if (!TryGetConstantElementSize(child, out var childSize)) return false;
+                if (!TryGetConstantElementSize(child, out var childSize, depth + 1)) return false;
                 total += childSize;
                 if (child.IsAligned) total = (total + 3) & ~3L;
             }

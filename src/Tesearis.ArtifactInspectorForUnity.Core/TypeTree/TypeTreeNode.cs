@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 
 namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
@@ -36,6 +37,20 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         public bool HasUnsupportedManagedReferenceShape { get; }
 
         public IReadOnlyList<TypeTreeNode> Children { get; }
+
+        // Sentinels for the lazy constant-byte-size cache (see TryGetConstantByteSize).
+        // Valid constant sizes are always >= 0, so these negative sentinels are unambiguous.
+        private const long CacheSentinelNotYetComputed = long.MinValue;
+        private const long CacheSentinelNotConstant = long.MinValue + 1;
+
+        /// <summary>
+        /// Lazily-computed, cached result of <see cref="TypeTreeOffsetWalker.TryGetConstantElementSize"/>
+        /// for this node. Written at most once per node (idempotently) via Interlocked, so the same
+        /// TypeTreeNode instance can safely be read by many concurrent threads (as happens when many
+        /// objects of the same type are inspected simultaneously — all share the same type-tree nodes
+        /// from <see cref="TypeTreeCache"/>).
+        /// </summary>
+        private long _cachedConstantByteSize = CacheSentinelNotYetComputed;
 
         internal TypeTreeNode(
             string name,
@@ -88,6 +103,41 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 Children = rawChildren;
                 IsAligned = (metaFlags & TypeTreeMetaFlags.AlignBytes) != 0;
             }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> and sets <paramref name="size"/> to this node's constant serialized byte
+        /// size when that size is statically known without reading any byte-source data. Returns
+        /// <c>false</c> for variable-size nodes (arrays, strings, structs containing such fields).
+        /// <para>
+        /// The result is computed on the first call and cached on the node instance, so repeated calls
+        /// from any number of threads pay only a single volatile read after the first computation. Since
+        /// <see cref="TypeTreeCache"/> shares the same <see cref="TypeTreeNode"/> instances across all
+        /// objects of the same type, this cache is effectively process-wide per type, not per object —
+        /// the first of N same-type objects warms it, and the remaining N-1 get an immediate O(1) answer.
+        /// </para>
+        /// </summary>
+        internal bool TryGetConstantByteSize(out long size)
+        {
+            var cached = Interlocked.Read(ref _cachedConstantByteSize);
+            if (cached != CacheSentinelNotYetComputed)
+            {
+                if (cached == CacheSentinelNotConstant) { size = 0; return false; }
+                size = cached;
+                return true;
+            }
+
+            // First call: compute via the existing (stateless) logic, then cache the result.
+            // If two threads race, both compute the same value — the CAS ensures exactly one write
+            // wins, and the re-read gives every thread the canonical stored value.
+            var hasConstant = TypeTreeOffsetWalker.TryGetConstantElementSize(this, out var computed);
+            var toStore = hasConstant ? computed : CacheSentinelNotConstant;
+            Interlocked.CompareExchange(ref _cachedConstantByteSize, toStore, CacheSentinelNotYetComputed);
+
+            cached = Interlocked.Read(ref _cachedConstantByteSize);
+            if (cached == CacheSentinelNotConstant) { size = 0; return false; }
+            size = cached;
+            return true;
         }
 
         /// <summary>Throws if the node looks array-like by name but its IsArray flag is not set.</summary>

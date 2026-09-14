@@ -53,9 +53,46 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
         public int GetArchiveNodeCount(IntPtr archiveHandle) => ArchiveNodes.Count;
         public ArchiveNode GetArchiveNode(IntPtr archiveHandle, int index) => ArchiveNodes[index];
         public IntPtr OpenFile(string virtualPath) => OpenFileOverride != null ? OpenFileOverride(virtualPath) : NextHandle();
-        public long ReadFile(IntPtr fileHandle, byte[] buffer, long size) => 0;
-        public long SeekFile(IntPtr fileHandle, long offset, SeekOrigin origin) => offset;
-        public long GetFileSize(IntPtr fileHandle) => 0;
+
+        /// <summary>Backing bytes for <see cref="ReadFile"/>/<see cref="GetFileSize"/>. Empty by default,
+        /// matching every other test's assumption of a contentless fake file; set it when a test needs
+        /// <c>SerializedFile</c>/<c>TypeTreeReader</c> to read real field values through this fake.</summary>
+        public byte[] Content { get; set; } = Array.Empty<byte>();
+
+        public int ReadFileCallCount { get; private set; }
+
+        /// <summary>Every offset passed to <see cref="SeekFile"/>, in call order -- lets a test observe the
+        /// actual read order (e.g. to confirm a bulk pass visits objects sorted by ByteOffset rather than in
+        /// native/insertion order) without needing to intercept the real <c>IRandomAccessByteSource</c> chain,
+        /// which <c>SerializedFile</c> builds internally.</summary>
+        public List<long> SeekOffsets { get; } = new();
+
+        private long _filePosition;
+
+        public long ReadFile(IntPtr fileHandle, byte[] buffer, long size)
+        {
+            ReadFileCallCount++;
+            var available = Math.Max(0, Content.Length - _filePosition);
+            var toCopy = (int)Math.Min(size, available);
+            if (toCopy > 0) Buffer.BlockCopy(Content, (int)_filePosition, buffer, 0, toCopy);
+            _filePosition += toCopy;
+            return toCopy;
+        }
+
+        public long SeekFile(IntPtr fileHandle, long offset, SeekOrigin origin)
+        {
+            SeekOffsets.Add(offset);
+            _filePosition = origin switch
+            {
+                SeekOrigin.Begin => offset,
+                SeekOrigin.Current => _filePosition + offset,
+                SeekOrigin.End => Content.Length + offset,
+                _ => offset
+            };
+            return _filePosition;
+        }
+
+        public long GetFileSize(IntPtr fileHandle) => Content.Length;
         public void CloseFile(IntPtr fileHandle) => ClosedFileHandles.Add(fileHandle);
 
         public IntPtr OpenSerializedFile(string virtualPath) =>

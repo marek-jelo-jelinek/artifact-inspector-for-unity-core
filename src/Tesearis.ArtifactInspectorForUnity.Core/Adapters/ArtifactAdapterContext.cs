@@ -22,5 +22,16 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
             SerializedFile = serializedFile;
             Archive = archive;
         }
+
+        /// <summary>
+        /// A cached, mostly-eager decoding of this object's fields (see <see cref="ObjectSnapshot"/>), for an
+        /// adapter that needs repeated or cross-object field lookups (e.g. resolving a sibling object's name
+        /// several times). Most adapters, which read each object's own fields once via <see cref="Reader"/>,
+        /// don't need this.
+        /// </summary>
+        public ObjectSnapshot Snapshot(MaterializeOptions options = null)
+        {
+            return SerializedFile.GetOrBuildSnapshotForRef(ObjectRef, options);
+        }
     }
 }

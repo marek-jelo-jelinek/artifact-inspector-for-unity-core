@@ -76,6 +76,59 @@ if (reader.TryGetField("m_Channels", out var channels))
 }
 ```
 
+## Repeated and cross-object field lookups (snapshots)
+
+`ObjectRef.GetReader()` builds a fresh `TypeTreeReader` every call, which is the right choice for reading
+an object's fields once. It's the wrong choice for reading the *same* object's fields repeatedly -- e.g.
+several sibling `MonoBehaviour`s each resolving their owning `GameObject`'s name -- since each call re-walks
+that object's type tree from scratch. `ObjectRef.Snapshot()` fixes that: the first call decodes the object's
+fields once and caches the result on the owning `SerializedFile`; every later call for the same object, from
+any caller, is a plain dictionary lookup with no further reads.
+
+```csharp
+var snapshot = objectRef.Snapshot();
+var name = snapshot.Field("m_Name").AsString();
+
+// A later lookup of the same object -- from anywhere -- is served from the cache, not re-walked.
+var sameSnapshot = objectRef.Snapshot();
+```
+
+A field whose own size exceeds `MaterializeOptions.MaxInlineFieldSizeBytes` (1024 bytes by default) is left
+as a deferred reference instead of eagerly decoded -- large blobs (mesh/texture/audio-scale payloads, unusually
+long strings/arrays) stay exactly as lazy as `GetReader()` already makes them; only the fields cheap enough to
+be worth caching are decoded up front. `SnapshotField.IsDeferred` reports which; `SnapshotField.ToReader()` is
+an explicit escape hatch back to a live, lazy reader for one.
+
+`PPtr.TryResolveSnapshot` resolves a local reference (e.g. a `Component`'s owning `GameObject`) straight to a
+cached snapshot, so chasing the same reference repeatedly costs nothing after the first resolution:
+
+```csharp
+var target = reader.Field("m_GameObject").AsPPtr();
+if (target.TryResolveSnapshot(serializedFile, out var gameObject))
+{
+    Console.WriteLine(gameObject.Field("m_Name").AsString());
+}
+```
+
+For a consumer that knows upfront it will touch most or all of a file's objects -- walking a whole scene's
+hierarchy, say -- `SerializedFile.MaterializeAll(options)` snapshots every (optionally filtered) object in one
+pass, sorted by byte offset so the underlying reads stay forward/sequential instead of jumping around. This is
+an explicit, opt-in call: opening a file never eagerly materializes anything on its own, since doing so for
+every object in a huge scene could cost several times the file's own size in managed memory.
+
+```csharp
+using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
+
+// Only GameObject/Transform/MonoBehaviour (ClassIds 1/4/114) -- skips Mesh/Texture2D/AudioClip entirely.
+var options = new MaterializeOptions { TypeIdFilter = typeId => typeId is 1 or 4 or 114 };
+var result = serializedFile.MaterializeAll(options);
+Console.WriteLine($"{result.SucceededCount} objects materialized, {result.Failures.Count} failed");
+```
+
+One object failing to materialize (e.g. an unsupported `[SerializeReference]` shape, see
+[Known limitations](#known-limitations)) is recorded in `MaterializeResult.Failures`, not thrown -- it doesn't
+abort the rest of the pass.
+
 ## Custom adapters
 
 Adapters turn a raw type-tree reader into a typed, tolerant view of a known object type, via the public `ArtifactAdapter<T>` mechanism. Third
@@ -192,6 +245,7 @@ Quick reference; see the examples above for usage, and each type's XML doc comme
 - `ArtifactInspector`: entry point (`OpenAssetBundle`, `SetupLibraryPath`, `AddTypeTreeSource`/`RemoveTypeTreeSource`, native/editor version checks).
 - `ArtifactArchive`, `SerializedFile`, `ObjectRef`, `ExternalReference`, `PPtr`, `ArchiveEntryInfo`, `IRandomAccessByteSource`, `GuidFormatting`: the archive and serialized file model.
 - `TypeTreeReader`, `TypeTreeNode`, `TypeTreeSummary`: lazy, random access field reading.
+- `ObjectSnapshot`, `SnapshotField`, `MaterializeOptions`, `MaterializeResult`: cached, mostly-eager field decoding for repeated/cross-object lookups, see [Repeated and cross-object field lookups](#repeated-and-cross-object-field-lookups-snapshots) above.
 - `ArtifactAdapterRegistry`, `IArtifactAdapter`, `ArtifactAdapter<T>`, `ArtifactAdapterContext`, `RawObject`: the adapter mechanism, see [Custom adapters](#custom-adapters) above.
 - `StreamingInfo`: describes an out-of-line payload (offset/size/path) for adapters covering streamed asset types, see [Streamed data](#streamed-data) above.
 - `BinaryFormat.SerializedFileDetector`, `SerializedFileInfo`, `StrippedObjectInfo`, `TypeIdRegistry`, `YamlSerializedFileDetector`: stripped file (no TypeTree) support, see [Stripped files](#stripped-files-no-typetree) below.

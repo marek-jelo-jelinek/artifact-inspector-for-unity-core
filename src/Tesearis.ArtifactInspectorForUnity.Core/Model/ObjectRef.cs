@@ -29,5 +29,16 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             return _owner.CreateReader(PathId, ByteOffset);
         }
+
+        /// <summary>
+        /// A cached, mostly-eager decoding of this object's fields (see <see cref="ObjectSnapshot"/>). The
+        /// first call does one forward walk; every later call for this object -- from any caller -- is a
+        /// pure dictionary lookup, unlike <see cref="GetReader"/>, which builds a fresh reader (and throws
+        /// away its offset memoization) every time.
+        /// </summary>
+        public ObjectSnapshot Snapshot(MaterializeOptions options = null)
+        {
+            return _owner.GetOrBuildSnapshotForRef(this, options);
+        }
     }
 }

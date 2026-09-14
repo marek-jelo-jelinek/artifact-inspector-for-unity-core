@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Native.Handles;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
@@ -18,6 +19,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         private readonly List<ObjectRef> _objects;
         private readonly List<ExternalReference> _externalReferences;
         private Dictionary<long, int> _objectsByPathId;
+        private Dictionary<long, ObjectSnapshot> _snapshotsByPathId;
         private List<TypeTreeSummary> _typeTrees;
         private int? _version;
 
@@ -133,6 +135,115 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                 var root = _typeTreeCache.GetOrBuild(_handle, pathId);
                 return new TypeTreeReader(root, _byteSource, byteOffset);
             });
+        }
+
+        /// <summary>
+        /// Looks up (or builds and caches) a fully-decoded snapshot of one object's fields, keyed by PathId.
+        /// A cache hit costs zero further byte-source reads -- this is what makes repeated lookups of the
+        /// same object (e.g. several sibling components resolving their owning GameObject's name) and
+        /// PPtr-chasing (see <see cref="PPtr.TryResolveSnapshot"/>) cheap, instead of re-walking the type
+        /// tree from scratch every time (see <see cref="ObjectRef.GetReader"/>'s doc comment for why that
+        /// used to happen).
+        ///
+        /// The first call for a given PathId decides eager-vs-deferred per field using whichever
+        /// <paramref name="options"/> were passed then; a later call for an already-cached PathId returns
+        /// the existing snapshot and ignores any different options passed here.
+        /// </summary>
+        public bool TryGetSnapshot(long pathId, out ObjectSnapshot snapshot, MaterializeOptions options = null)
+        {
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+
+                if (_snapshotsByPathId != null && _snapshotsByPathId.TryGetValue(pathId, out var cached))
+                {
+                    snapshot = cached;
+                    return true;
+                }
+
+                if (!TryGetObject(pathId, out var objectRef))
+                {
+                    snapshot = default;
+                    return false;
+                }
+
+                snapshot = BuildAndCacheSnapshot(objectRef, options ?? MaterializeOptions.Default);
+                return true;
+            }
+        }
+
+        /// <summary>Same as <see cref="TryGetSnapshot"/>, for a caller that already holds the <see cref="ObjectRef"/> and can skip the redundant PathId lookup.</summary>
+        internal ObjectSnapshot GetOrBuildSnapshotForRef(ObjectRef objectRef, MaterializeOptions options)
+        {
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+
+                if (_snapshotsByPathId != null && _snapshotsByPathId.TryGetValue(objectRef.PathId, out var cached))
+                {
+                    return cached;
+                }
+
+                return BuildAndCacheSnapshot(objectRef, options ?? MaterializeOptions.Default);
+            }
+        }
+
+        /// <summary>
+        /// Eagerly snapshots every object (optionally filtered by <see cref="MaterializeOptions.TypeIdFilter"/>),
+        /// in ascending <see cref="ObjectRef.ByteOffset"/> order for forward/local reads. Already-cached
+        /// objects are skipped, not rebuilt; a single object's failure is recorded in the result rather than
+        /// aborting the pass. Holds this file's internal lock for the whole pass, blocking other calls on
+        /// this instance until it finishes.
+        /// </summary>
+        public MaterializeResult MaterializeAll(MaterializeOptions options = null)
+        {
+            options ??= MaterializeOptions.Default;
+
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+
+                IEnumerable<ObjectRef> candidates = _objects;
+                if (options.TypeIdFilter != null) candidates = candidates.Where(o => options.TypeIdFilter(o.TypeId));
+
+                var ordered = candidates.OrderBy(o => o.ByteOffset);
+
+                var succeeded = 0;
+                var failures = new List<(long PathId, Exception Error)>();
+
+                foreach (var objectRef in ordered)
+                {
+                    if (_snapshotsByPathId != null && _snapshotsByPathId.ContainsKey(objectRef.PathId))
+                    {
+                        succeeded++;
+                        continue;
+                    }
+
+                    try
+                    {
+                        BuildAndCacheSnapshot(objectRef, options);
+                        succeeded++;
+                    }
+                    catch (ArtifactInspectorException ex)
+                    {
+                        failures.Add((objectRef.PathId, ex));
+                    }
+                }
+
+                return new MaterializeResult(succeeded, failures);
+            }
+        }
+
+        /// <summary>Builds one object's snapshot and caches it. Caller must hold <see cref="_lock"/>.</summary>
+        private ObjectSnapshot BuildAndCacheSnapshot(ObjectRef objectRef, MaterializeOptions options)
+        {
+            var root = _typeTreeCache.GetOrBuild(_handle, objectRef.PathId);
+            var rootField = SnapshotBuilder.Build(root, objectRef.ByteOffset, _byteSource, options);
+            var snapshot = new ObjectSnapshot(objectRef.PathId, objectRef.TypeId, objectRef.ByteOffset, objectRef.ByteSize, rootField);
+
+            _snapshotsByPathId ??= new Dictionary<long, ObjectSnapshot>();
+            _snapshotsByPathId[objectRef.PathId] = snapshot;
+            return snapshot;
         }
 
         /// <summary>The walked type tree for one <see cref="TypeTrees"/> entry, by its <see cref="TypeTreeSummary.Index"/>.</summary>

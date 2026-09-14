@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Tesearis.ArtifactInspectorForUnity.Core.Adapters;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
@@ -34,52 +36,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         [OneTimeSetUp]
         public void Setup()
         {
-            if (!NativeLibraryFixture.TryResolvePath(out var libraryPath))
-            {
-                Assert.Ignore(
-                    "No local UnityFileSystemApi binary for this OS under UnityFileSystemApiLibraries/. " +
-                    "Copy one from a local Unity Editor install to run this fixture, see UnityFileSystemApiLibraries/.gitkeep.");
-            }
-
-            var filePaths = TestDataFixture.DiscoverFiles();
-            if (filePaths.Length == 0)
-            {
-                Assert.Ignore(
-                    "No files under TestData/. Drop any real Unity-built file (asset bundle, player build output, ...) " +
-                    "in there to run this fixture, see TestData/.gitkeep.");
-            }
-
-            ArtifactInspector.SetupLibraryPath(libraryPath);
-
-            // A real Player Build output directory is not just SerializedFiles/archives -- it also
-            // has ancillary files (Managed/*.dll, boot.config, *.json manifests, unity_app_guid,
-            // and out-of-line resource fragments like globalgamemanagers.assets.split0/1/2, which
-            // aren't independently self-describing -- Unity's virtual filesystem stitches them
-            // back onto their base file). Those aren't a SerializedFile-or-archive shape at all, so
-            // they're neither a bug nor exercised by this fixture -- just excluded from both lanes.
-            var archiveFilePaths = new List<string>();
-            var looseSerializedFilePaths = new List<string>();
-            foreach (var filePath in filePaths)
-            {
-                if (TryProbeAsArchive(filePath))
-                {
-                    archiveFilePaths.Add(filePath);
-                }
-                else if (TryProbeAsLooseSerializedFile(filePath))
-                {
-                    looseSerializedFilePaths.Add(filePath);
-                }
-            }
-
-            _archiveFilePaths = archiveFilePaths.ToArray();
-            _looseSerializedFilePaths = looseSerializedFilePaths.ToArray();
-
-            if (_archiveFilePaths.Length == 0 && _looseSerializedFilePaths.Length == 0)
-            {
-                Assert.Ignore(
-                    "No file under TestData/ opens as either an archive or a loose SerializedFile " +
-                    "-- only ancillary files (DLLs, manifests, resource fragments, ...) were found.");
-            }
+            var discovered = RealTestDataDiscovery.DiscoverAndProbe();
+            _archiveFilePaths = discovered.ArchiveFilePaths;
+            _looseSerializedFilePaths = discovered.LooseSerializedFilePaths;
         }
 
         /// <summary>
@@ -96,37 +55,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         public void TearDown()
         {
             ArtifactInspector.ResetForTests();
-        }
-
-        private static bool TryProbeAsArchive(string filePath)
-        {
-            try
-            {
-                using var archive = ArtifactInspector.OpenAssetBundle(filePath);
-                return true;
-            }
-            catch (NativeCallException)
-            {
-                return false;
-            }
-        }
-
-        private static bool TryProbeAsLooseSerializedFile(string filePath)
-        {
-            try
-            {
-                using var serializedFile = ArtifactInspector.OpenSerializedFile(filePath);
-                return true;
-            }
-            catch (SerializedFileOpenException ex) when (ex.MissingTypeTrees)
-            {
-                // Positively confirmed to be a stripped SerializedFile -- still counts as "is one".
-                return true;
-            }
-            catch (NativeCallException)
-            {
-                return false;
-            }
         }
 
         [Test]
@@ -151,18 +79,25 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         {
             foreach (var filePath in _archiveFilePaths)
             {
+                TestContext.Progress.WriteLine($"[OpenAllSerializedFiles] opening archive {filePath}");
                 using var archive = ArtifactInspector.OpenAssetBundle(filePath);
 
                 foreach (var entryName in archive.EntryNames)
                 {
+                    var openStopwatch = Stopwatch.StartNew();
                     using var serializedFile = archive.OpenSerializedFile(entryName);
+                    TestContext.Progress.WriteLine(
+                        $"[OpenAllSerializedFiles] opened entry {filePath} :: {entryName} " +
+                        $"({serializedFile.Objects.Count} objects, took {openStopwatch.ElapsedMilliseconds} ms)");
                     yield return ($"{filePath} :: {entryName}", serializedFile, false);
                 }
             }
 
             foreach (var filePath in _looseSerializedFilePaths)
             {
+                TestContext.Progress.WriteLine($"[OpenAllSerializedFiles] opening loose file {filePath}");
                 SerializedFile serializedFile;
+                var openStopwatch = Stopwatch.StartNew();
                 try
                 {
                     serializedFile = ArtifactInspector.OpenSerializedFile(filePath);
@@ -174,6 +109,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
 
                 using (serializedFile)
                 {
+                    TestContext.Progress.WriteLine(
+                        $"[OpenAllSerializedFiles] opened loose file {filePath} " +
+                        $"({serializedFile.Objects.Count} objects, took {openStopwatch.ElapsedMilliseconds} ms)");
                     yield return (filePath, serializedFile, true);
                 }
             }
@@ -192,13 +130,27 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         private static bool IsKnownLooseFileTypeTreeLimitation(bool isLooseFile, NativeCallException ex) =>
             isLooseFile && ex.Message.Contains("UFS_GetTypeTree");
 
+        /// <summary>How often <see cref="Objects_EveryObjectInEveryEntry_HasASelfConsistentClassNameAndByteSize"/> logs progress.</summary>
+        private const int ObjectProgressLogInterval = 100;
+
         [Test]
         public void Objects_EveryObjectInEveryEntry_HasASelfConsistentClassNameAndByteSize()
         {
             foreach (var (label, serializedFile, isLooseFile) in OpenAllSerializedFiles())
             {
+                var entryStopwatch = Stopwatch.StartNew();
+                var objectCount = serializedFile.Objects.Count;
+                var index = 0;
+
                 foreach (var objectRef in serializedFile.Objects)
                 {
+                    if (index % ObjectProgressLogInterval == 0)
+                    {
+                        TestContext.Progress.WriteLine(
+                            $"[Objects] {label} :: object {index}/{objectCount} " +
+                            $"(elapsed {entryStopwatch.ElapsedMilliseconds} ms)");
+                    }
+
                     var objectLabel = $"{label} :: pathId {objectRef.PathId}";
                     Assert.That(objectRef.ByteSize, Is.GreaterThanOrEqualTo(0), objectLabel);
 
@@ -226,7 +178,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                     {
                         // ignore
                     }
+
+                    index++;
                 }
+
+                TestContext.Progress.WriteLine(
+                    $"[Objects] {label} :: done, {objectCount} objects in {entryStopwatch.ElapsedMilliseconds} ms");
             }
         }
 
@@ -257,6 +214,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             {
                 if (!TryGetTypeTrees(serializedFile, out var typeTrees)) continue;
 
+                var entryStopwatch = Stopwatch.StartNew();
                 var seenIndices = new HashSet<int>();
 
                 foreach (var summary in typeTrees)
@@ -272,6 +230,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                     var root = serializedFile.GetTypeTreeByIndex(summary.Index);
                     Assert.That(root.TypeName, Is.Not.Null.And.Not.Empty, summaryLabel);
                 }
+
+                TestContext.Progress.WriteLine(
+                    $"[TypeTrees] {label} :: done, {typeTrees.Count} type trees in {entryStopwatch.ElapsedMilliseconds} ms");
             }
         }
 
@@ -281,6 +242,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             foreach (var (label, serializedFile, isLooseFile) in OpenAllSerializedFiles())
             {
                 if (!TryGetTypeTrees(serializedFile, out var typeTrees)) continue;
+
+                var entryStopwatch = Stopwatch.StartNew();
 
                 foreach (var summary in typeTrees)
                 {
@@ -313,6 +276,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
 
                     Assert.That(byIndex.TypeName, Is.EqualTo(byObject.TypeName), summaryLabel);
                 }
+
+                TestContext.Progress.WriteLine(
+                    $"[GetTypeTreeByIndex] {label} :: done, {typeTrees.Count} type trees in {entryStopwatch.ElapsedMilliseconds} ms");
             }
         }
 
@@ -401,7 +367,15 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
                     var ranged = archive.ReadRawEntry(entry.Path, 0, (int)entry.Size);
 
                     Assert.That(whole.Length, Is.EqualTo(entry.Size), label);
-                    Assert.That(whole, Is.EqualTo(ranged), label);
+
+                    // Is.EqualTo on two byte[] falls back to NUnit's boxed, element-by-element
+                    // IEnumerable comparison -- fine for small arrays, but on a multi-MB entry the
+                    // boxing/GC cost dwarfs the actual reads. SequenceEqual is the allocation-free
+                    // equivalent; fall back to Is.EqualTo only on a mismatch, for a diagnosable diff.
+                    if (!whole.AsSpan().SequenceEqual(ranged))
+                    {
+                        Assert.That(whole, Is.EqualTo(ranged), label);
+                    }
                 }
             }
         }
@@ -484,7 +458,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
 
                     using (serializedFile)
                     {
+                        var entryStopwatch = Stopwatch.StartNew();
                         AssertDetectorMatchesNative(label, serializedFile, archive.OpenRawByteSource(entryName));
+                        TestContext.Progress.WriteLine(
+                            $"[SerializedFileDetector] {label} :: done in {entryStopwatch.ElapsedMilliseconds} ms");
                     }
                 }
             }
@@ -520,14 +497,27 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             // loose-file equivalent (out of scope, see PROPOSAL-player-build-support.md).
             foreach (var filePath in _archiveFilePaths)
             {
+                TestContext.Progress.WriteLine($"[Inspect] opening archive {filePath}");
                 using var archive = ArtifactInspector.OpenAssetBundle(filePath);
 
+                var entryStopwatch = Stopwatch.StartNew();
+                var count = 0;
                 foreach (var obj in registry.Inspect(archive))
                 {
+                    if (count % ObjectProgressLogInterval == 0)
+                    {
+                        TestContext.Progress.WriteLine(
+                            $"[Inspect] {filePath} :: object {count} (elapsed {entryStopwatch.ElapsedMilliseconds} ms)");
+                    }
+
                     // Every object comes back as either a known adapter's result or a
                     // RawObject fallback -- Adapt()/Inspect() never return null.
                     Assert.That(obj, Is.Not.Null, filePath);
+                    count++;
                 }
+
+                TestContext.Progress.WriteLine(
+                    $"[Inspect] {filePath} :: done, {count} objects in {entryStopwatch.ElapsedMilliseconds} ms");
             }
         }
     }

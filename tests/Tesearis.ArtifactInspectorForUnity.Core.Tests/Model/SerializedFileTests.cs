@@ -115,5 +115,69 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             Assert.Throws<ObjectDisposedException>(() => _ = serializedFile.Objects);
             Assert.That(api.ClosedSerializedFileHandles, Has.Count.EqualTo(1));
         }
+
+        [Test]
+        public void MaterializeAll_WithTypeIdFilter_OnlySnapshotsMatchingObjects()
+        {
+            // TypeId 2's object sits more than BufferedByteSource's 64 KiB window away from the TypeId 1
+            // objects, so reading it later can't be coincidentally satisfied by a window a filtered-out
+            // MaterializeAll pass never had reason to fetch.
+            var api = new FakeUnityFileSystemApi { Content = new byte[100004] };
+            api.Objects.Add(new ObjectInfo { Id = 1, Offset = 0, Size = 4, TypeId = 1 });
+            api.Objects.Add(new ObjectInfo { Id = 2, Offset = 100000, Size = 4, TypeId = 2 });
+            api.Objects.Add(new ObjectInfo { Id = 3, Offset = 8, Size = 4, TypeId = 1 });
+            var serializedFile = Create(api);
+
+            var result = serializedFile.MaterializeAll(new MaterializeOptions { TypeIdFilter = typeId => typeId == 1 });
+
+            Assert.That(result.SucceededCount, Is.EqualTo(2));
+
+            var readsAfterMaterialize = api.ReadFileCallCount;
+            Assert.That(serializedFile.TryGetSnapshot(1, out _), Is.True);
+            Assert.That(api.ReadFileCallCount, Is.EqualTo(readsAfterMaterialize), "TypeId 1 was already materialized by the filtered pass");
+
+            Assert.That(serializedFile.TryGetSnapshot(2, out _), Is.True);
+            Assert.That(api.ReadFileCallCount, Is.GreaterThan(readsAfterMaterialize), "TypeId 2 was excluded by the filter, so it wasn't cached yet");
+        }
+
+        [Test]
+        public void MaterializeAll_ProcessesObjectsInAscendingByteOffsetOrder_RegardlessOfInsertionOrder()
+        {
+            var api = new FakeUnityFileSystemApi { Content = new byte[300000] };
+
+            // Inserted out of offset order (highest first) -- MaterializeAll must sort by ByteOffset itself
+            // rather than trust native/insertion order, which isn't documented or guaranteed to be sorted.
+            api.Objects.Add(new ObjectInfo { Id = 3, Offset = 200000, Size = 4, TypeId = 1 });
+            api.Objects.Add(new ObjectInfo { Id = 1, Offset = 0, Size = 4, TypeId = 1 });
+            api.Objects.Add(new ObjectInfo { Id = 2, Offset = 100000, Size = 4, TypeId = 1 });
+            var serializedFile = Create(api);
+
+            serializedFile.MaterializeAll();
+
+            // Each object sits more than BufferedByteSource's 64 KiB window apart, so reading it forces a
+            // fresh native seek -- the recorded seek order reveals visitation order.
+            var seeksAtObjectOffsets = api.SeekOffsets.FindAll(o => o == 0 || o == 100000 || o == 200000);
+            Assert.That(seeksAtObjectOffsets, Is.EqualTo(new long[] { 0, 100000, 200000 }));
+        }
+
+        [Test]
+        public void MaterializeAll_ObjectWithUnsupportedManagedReferenceShape_RecordsFailureWithoutAbortingTheRest()
+        {
+            var api = new FakeUnityFileSystemApi
+            {
+                Content = new byte[] { 1, 0, 0, 0 },
+                GetTypeTreeNodeInfoOverride = _ => new TypeTreeNodeInfo(
+                    "managedReference", "v", 0, -1, TypeTreeFlags.IsManagedReference, TypeTreeMetaFlags.None, firstChildNode: 0, nextNode: 0),
+            };
+            api.Objects.Add(new ObjectInfo { Id = 1, Offset = 0, Size = 4, TypeId = 1 });
+            var serializedFile = Create(api);
+
+            var result = serializedFile.MaterializeAll();
+
+            Assert.That(result.SucceededCount, Is.EqualTo(0));
+            Assert.That(result.Failures, Has.Count.EqualTo(1));
+            Assert.That(result.Failures[0].PathId, Is.EqualTo(1));
+            Assert.That(result.Failures[0].Error, Is.InstanceOf<UnsupportedManagedReferenceShapeException>());
+        }
     }
 }

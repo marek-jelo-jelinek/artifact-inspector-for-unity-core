@@ -5,7 +5,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
     /// <summary>Pure offset/size arithmetic over a TypeTreeNode shape and an IRandomAccessByteSource.</summary>
     internal static class TypeTreeOffsetWalker
     {
-        private const int MaxRecursionDepth = 64;
+        internal const int MaxRecursionDepth = 64;
 
         /// <summary>The number of bytes node's data occupies starting at offset, excluding trailing alignment.</summary>
         internal static long ComputeSize(TypeTreeNode node, long offset, IRandomAccessByteSource byteSource, int depth = 0)

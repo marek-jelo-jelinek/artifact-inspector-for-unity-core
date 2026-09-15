@@ -7,6 +7,10 @@ obj/
 .idea/
 *.user
 
+# Local tools and scratch directories
+.local/
+Library/
+
 # OS
 .DS_Store
 

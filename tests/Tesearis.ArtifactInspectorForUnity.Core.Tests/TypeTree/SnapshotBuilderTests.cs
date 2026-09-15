@@ -252,5 +252,37 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.That(field.IsDeferred, Is.True);
             Assert.That(field.ToReader().AsString(), Is.EqualTo("a long deferred string"));
         }
+
+        [Test]
+        public void Build_ConstantSizeStructElementArrayOverThreshold_IsDeferredWithoutReadingElements()
+        {
+            var elementTemplate = FakeTypeTreeBuilder.Struct("data", "SubMesh",
+                FakeTypeTreeBuilder.Int32("firstByte"),
+                FakeTypeTreeBuilder.Int32("indexCount"),
+                FakeTypeTreeBuilder.Int32("topology"));
+
+            var arrayNode = FakeTypeTreeBuilder.Array(elementTemplate);
+            const int elementCount = 1000;
+            var writer = new ByteBufferWriter().WriteInt32(elementCount);
+            for (var i = 0; i < elementCount; i++)
+            {
+                writer.WriteInt32(i * 10).WriteInt32(i * 20).WriteInt32(4);
+            }
+
+            var buffer = writer.ToArray();
+            var byteSource = new CountingByteSource(new InMemoryByteSource(buffer));
+            var options = new MaterializeOptions { MaxInlineFieldSizeBytes = 1024 };
+
+            var field = SnapshotBuilder.Build(arrayNode, 0, byteSource, options);
+
+            var readsDuringBuild = byteSource.ReadCallCount;
+            Assert.That(field.IsDeferred, Is.True);
+            // Only length prefix was read during build, elements were not touched
+            Assert.That(readsDuringBuild, Is.EqualTo(1));
+
+            Assert.That(field.ArrayLength(), Is.EqualTo(elementCount));
+            Assert.That(field.ByteSize, Is.EqualTo(4L + (long)elementCount * 12));
+            Assert.That(field.Element(500).Field("indexCount").AsInt32(), Is.EqualTo(500 * 20));
+        }
     }
 }

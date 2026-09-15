@@ -57,37 +57,45 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
             return TryResolve(context, out var adapter) ? adapter.Read(context) : new RawObject(objectRef, reader.TypeName);
         }
 
-        /// <summary>Dispatches every object in serializedFile, in declaration order.</summary>
-        public IEnumerable<object> Inspect(SerializedFile serializedFile, ArtifactArchive archive)
+        /// <summary>Dispatches every object in serializedFile, in declaration order or ordered by ByteOffset.</summary>
+        public IEnumerable<object> Inspect(SerializedFile serializedFile, ArtifactArchive archive, bool orderByOffset = false)
         {
             if (serializedFile == null) throw new ArgumentNullException(nameof(serializedFile));
             if (archive == null) throw new ArgumentNullException(nameof(archive));
 
-            return InspectObjects(serializedFile, archive);
+            return InspectObjects(serializedFile, archive, orderByOffset);
         }
 
-        private IEnumerable<object> InspectObjects(SerializedFile serializedFile, ArtifactArchive archive)
+        private IEnumerable<object> InspectObjects(SerializedFile serializedFile, ArtifactArchive archive, bool orderByOffset)
         {
-            foreach (var objectRef in serializedFile.Objects)
+            var objects = serializedFile.Objects;
+            if (orderByOffset)
+            {
+                var objectsSorted = new List<ObjectRef>(objects);
+                objectsSorted.Sort((a, b) => a.ByteOffset.CompareTo(b.ByteOffset));
+                objects = objectsSorted;
+            }
+
+            foreach (var objectRef in objects)
             {
                 yield return Adapt(objectRef, serializedFile, archive);
             }
         }
 
         /// <summary>Dispatches every object in every SerializedFile entry of archive.</summary>
-        public IEnumerable<object> Inspect(ArtifactArchive archive)
+        public IEnumerable<object> Inspect(ArtifactArchive archive, bool orderByOffset = false)
         {
             if (archive == null) throw new ArgumentNullException(nameof(archive));
 
-            return InspectEntries(archive);
+            return InspectEntries(archive, orderByOffset);
         }
 
-        private IEnumerable<object> InspectEntries(ArtifactArchive archive)
+        private IEnumerable<object> InspectEntries(ArtifactArchive archive, bool orderByOffset)
         {
             foreach (var entryName in archive.EntryNames)
             {
                 using var serializedFile = archive.OpenSerializedFile(entryName);
-                foreach (var obj in Inspect(serializedFile, archive))
+                foreach (var obj in Inspect(serializedFile, archive, orderByOffset))
                 {
                     yield return obj;
                 }

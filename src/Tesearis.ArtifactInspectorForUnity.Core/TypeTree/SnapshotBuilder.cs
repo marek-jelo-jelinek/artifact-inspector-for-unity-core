@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 {
@@ -106,42 +107,57 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 return BuildByteLikePayload(node, offset, byteSource, options, count);
             }
 
-            if (isFixedLeafElement)
+            if (TypeTreeOffsetWalker.TryGetConstantElementSize(elementTemplate, out var constantElementSize))
             {
-                // Any other fixed-size scalar element (int[], float[], ...): still O(1) to size, and
-                // decodable with one bulk read instead of one read per element.
-                var totalSize = 4L + (long)count * elementTemplate.ByteSize;
+                var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
+                var totalDataBytes = count * stride;
+                TypeTreeOffsetWalker.RequireCountFitsRemainingBytes(totalDataBytes, offset + 4, byteSource);
+                var totalSize = 4L + totalDataBytes;
+
                 if (totalSize > options.MaxInlineFieldSizeBytes)
                 {
                     return SnapshotField.Deferred(node, byteSource, offset, totalSize);
                 }
 
-                var bulk = new byte[count * elementTemplate.ByteSize];
-                if (bulk.Length > 0)
+                if (isFixedLeafElement)
                 {
-                    var read = byteSource.Read(offset + 4, bulk, 0, bulk.Length);
-                    if (read != bulk.Length)
+                    var bulk = new byte[count * elementTemplate.ByteSize];
+                    if (bulk.Length > 0)
                     {
-                        throw new ArtifactInspectorException($"Unexpected end of data while reading a {bulk.Length}-byte array at offset {offset + 4}.");
+                        var read = byteSource.Read(offset + 4, bulk, 0, bulk.Length);
+                        if (read != bulk.Length)
+                        {
+                            throw new ArtifactInspectorException($"Unexpected end of data while reading a {bulk.Length}-byte array at offset {offset + 4}.");
+                        }
                     }
+
+                    var elements = new SnapshotField[count];
+                    for (var i = 0; i < count; i++)
+                    {
+                        var elementBytes = new byte[elementTemplate.ByteSize];
+                        Buffer.BlockCopy(bulk, i * elementTemplate.ByteSize, elementBytes, 0, elementTemplate.ByteSize);
+                        elements[i] = SnapshotField.Scalar(elementTemplate, byteSource, offset + 4 + (long)i * elementTemplate.ByteSize, elementBytes);
+                    }
+
+                    return SnapshotField.ElementArray(node, byteSource, offset, elements, totalSize);
                 }
 
-                var elements = new SnapshotField[count];
+                var structElements = new SnapshotField[count];
+                var currentStructOffset = offset + 4;
                 for (var i = 0; i < count; i++)
                 {
-                    var elementBytes = new byte[elementTemplate.ByteSize];
-                    Buffer.BlockCopy(bulk, i * elementTemplate.ByteSize, elementBytes, 0, elementTemplate.ByteSize);
-                    elements[i] = SnapshotField.Scalar(elementTemplate, byteSource, offset + 4 + (long)i * elementTemplate.ByteSize, elementBytes);
+                    var built = Build(elementTemplate, currentStructOffset, byteSource, options, depth + 1);
+                    structElements[i] = built;
+                    currentStructOffset += built.ByteSize;
+                    if (elementTemplate.IsAligned) currentStructOffset = TypeTreeOffsetWalker.ApplyAlignment(elementTemplate, currentStructOffset);
                 }
 
-                return SnapshotField.ElementArray(node, byteSource, offset, elements, totalSize);
+                return SnapshotField.ElementArray(node, byteSource, offset, structElements, totalSize);
             }
 
-            // Variable/struct-shaped elements (PPtr<T>[], nested arrays, ...): decode while accumulating
-            // size, bailing out to a deferred field the moment the threshold is crossed. This keeps the
-            // common (ends up under threshold) case a single walk instead of sizing with ComputeSize and
-            // then decoding with a second, redundant walk.
-            var variableElements = new SnapshotField[count];
+            // Variable-shaped elements (nested arrays, strings in structs, ...): decode while accumulating
+            // size, bailing out to a deferred field the moment the threshold is crossed.
+            var variableElements = new List<SnapshotField>();
             var currentOffset = offset + 4;
             for (var i = 0; i < count; i++)
             {
@@ -155,10 +171,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                     return SnapshotField.Deferred(node, byteSource, offset, wholeArraySize);
                 }
 
-                variableElements[i] = built;
+                variableElements.Add(built);
             }
 
-            return SnapshotField.ElementArray(node, byteSource, offset, variableElements, currentOffset - offset);
+            return SnapshotField.ElementArray(node, byteSource, offset, variableElements.ToArray(), currentOffset - offset);
         }
 
         private static SnapshotField BuildByteLikePayload(TypeTreeNode node, long offset, IRandomAccessByteSource byteSource, MaterializeOptions options, int contentLength)

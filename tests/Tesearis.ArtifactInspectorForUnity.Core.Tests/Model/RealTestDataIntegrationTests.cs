@@ -493,8 +493,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         {
             var registry = new ArtifactAdapterRegistry();
 
-            // Archive lane only: registry.Inspect(ArtifactArchive) is an archive-level API with no
-            // loose-file equivalent (out of scope, see PROPOSAL-player-build-support.md).
+            // Archive lane: registry.Inspect(ArtifactArchive) is an archive-level entry point that
+            // iterates all serialized files within the mounted archive container.
             foreach (var filePath in _archiveFilePaths)
             {
                 TestContext.Progress.WriteLine($"[Inspect] opening archive {filePath}");

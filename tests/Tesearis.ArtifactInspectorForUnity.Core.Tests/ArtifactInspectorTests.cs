@@ -15,6 +15,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests
         }
 
         [Test]
+        public void OpenSerializedFile_NullFilePath_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => ArtifactInspector.OpenSerializedFile(null));
+        }
+
+        [Test]
         public void AddTypeTreeSource_NullFilePath_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() => ArtifactInspector.AddTypeTreeSource(null));

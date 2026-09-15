@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ArtifactInspector.OpenSerializedFile(filePath)`: opens loose, non-archive SerializedFiles directly on disk (Player Build output like `sharedassets0.assets`, `globalgamemanagers`).
+- Added `orderByOffset` support to `ArtifactAdapterRegistry.Inspect(...)` to sort objects by file byte offset for forward-sequential reads.
+- Added `ArtifactAdapterRegistry.Inspect(SerializedFile, ...)` overloads to dispatch directly over loose `SerializedFile` instances without an archive container.
 - `TypeTree.UnsupportedManagedReferenceShapeException`: typed exception for unsupported `[SerializeReference]` shapes.
 - `ObjectRef.Snapshot()` / `SerializedFile.TryGetSnapshot()`: caches an object's decoded fields (`ObjectSnapshot`/`SnapshotField`) keyed by PathId, so repeated lookups of the same object -- e.g. several sibling components resolving their owning GameObject's name -- pay one type-tree walk instead of one per lookup. Fields larger than `MaterializeOptions.MaxInlineFieldSizeBytes` (1024 bytes by default) stay deferred/lazy, same as `TypeTreeReader` already makes them.
 - `SerializedFile.MaterializeAll(options)`: eagerly snapshots every (optionally `TypeIdFilter`ed) object, sorted by byte offset, for a consumer that knows upfront it will touch most/all objects in a file. Opt-in only -- opening a file never materializes anything automatically.

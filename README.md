@@ -76,6 +76,21 @@ if (reader.TryGetField("m_Channels", out var channels))
 }
 ```
 
+### Loose Player Build files
+
+Opening loose files directly from disk without an archive container (e.g. Player Build output like `sharedassets0.assets` or `globalgamemanagers`):
+
+```csharp
+using var serializedFile = ArtifactInspector.OpenSerializedFile("path/to/sharedassets0.assets");
+
+foreach (var objectRef in serializedFile.Objects)
+{
+    var reader = objectRef.GetReader();
+    // ...
+}
+```
+
+
 ## Repeated and cross-object field lookups (snapshots)
 
 `ObjectRef.GetReader()` builds a fresh `TypeTreeReader` every call, which is the right choice for reading
@@ -166,7 +181,7 @@ dropped, so you can log them or fall back to `raw.ObjectRef.GetReader()` yoursel
 
 `Inspect` is a convenience on top of the manual loop from the quick start above: `SerializedFile.Objects`/`ObjectRef.GetReader()` are still there for
 one-off or lower-level use, and dispatching through a registry additionally reuses a single `TypeTreeReader` per object across matching and reading,
-instead of building one for `ClassName` and another for `GetReader()`.
+instead of building one for `ClassName` and another for `GetReader()`. `Inspect` can also dispatch directly over loose files via `registry.Inspect(serializedFile)`, and accepts an optional `orderByOffset: true` flag to sort objects by byte offset for forward-sequential reads.
 
 ### Writing an adapter
 
@@ -242,7 +257,7 @@ you, since which field means "streamed" and what an empty path means is specific
 
 Quick reference; see the examples above for usage, and each type's XML doc comments for full member-level detail.
 
-- `ArtifactInspector`: entry point (`OpenAssetBundle`, `SetupLibraryPath`, `AddTypeTreeSource`/`RemoveTypeTreeSource`, native/editor version checks).
+- `ArtifactInspector`: entry point (`OpenAssetBundle`, `OpenSerializedFile`, `SetupLibraryPath`, `AddTypeTreeSource`/`RemoveTypeTreeSource`, native/editor version checks).
 - `ArtifactArchive`, `SerializedFile`, `ObjectRef`, `ExternalReference`, `PPtr`, `ArchiveEntryInfo`, `IRandomAccessByteSource`, `GuidFormatting`: the archive and serialized file model.
 - `TypeTreeReader`, `TypeTreeNode`, `TypeTreeSummary`: lazy, random access field reading.
 - `ObjectSnapshot`, `SnapshotField`, `MaterializeOptions`, `MaterializeResult`: cached, mostly-eager field decoding for repeated/cross-object lookups, see [Repeated and cross-object field lookups](#repeated-and-cross-object-field-lookups-snapshots) above.

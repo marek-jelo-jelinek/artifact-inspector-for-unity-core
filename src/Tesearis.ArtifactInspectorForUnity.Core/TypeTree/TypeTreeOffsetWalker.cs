@@ -141,10 +141,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             return (endOffset + 3) & ~3L;
         }
 
+        [ThreadStatic]
+        private static byte[] t_prefixBuffer;
+
         internal static int ReadInt32LittleEndian(IRandomAccessByteSource byteSource, long offset)
         {
             if (byteSource == null) throw new ArgumentNullException(nameof(byteSource));
-            var buffer = new byte[4];
+            var buffer = t_prefixBuffer ??= new byte[4];
             var read = byteSource.Read(offset, buffer, 0, 4);
             if (read != 4)
                 throw new ArtifactInspectorException("Unexpected end of data while reading a 4-byte length prefix at offset " + offset + ".");

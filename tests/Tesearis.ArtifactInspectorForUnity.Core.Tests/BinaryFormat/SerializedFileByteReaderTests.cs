@@ -109,6 +109,45 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         }
 
         [Test]
+        public void ReadNullTerminatedAsciiString_LongStringAcrossChunkBoundary_ReadsCorrectly()
+        {
+            var longString = new string('x', 150);
+            var buffer = new ByteBufferWriter().WriteNullTerminatedString(longString).WriteByte(0x42).ToArray();
+            var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
+
+            Assert.That(reader.ReadNullTerminatedAsciiString(), Is.EqualTo(longString));
+            Assert.That(reader.ReadByte(), Is.EqualTo(0x42));
+        }
+
+        [Test]
+        public void ReadNullTerminatedAsciiString_TerminatorAtChunkBoundary_ReadsCorrectly()
+        {
+            // 63 chars + '\0' fits exactly in a 64-byte chunk
+            var str63 = new string('a', 63);
+            var buffer63 = new ByteBufferWriter().WriteNullTerminatedString(str63).WriteByte(0x11).ToArray();
+            var reader63 = new SerializedFileByteReader(new InMemoryByteSource(buffer63), 0, swap: false);
+            Assert.That(reader63.ReadNullTerminatedAsciiString(), Is.EqualTo(str63));
+            Assert.That(reader63.ReadByte(), Is.EqualTo(0x11));
+
+            // 64 chars fills the chunk, '\0' is at index 0 of next chunk
+            var str64 = new string('b', 64);
+            var buffer64 = new ByteBufferWriter().WriteNullTerminatedString(str64).WriteByte(0x22).ToArray();
+            var reader64 = new SerializedFileByteReader(new InMemoryByteSource(buffer64), 0, swap: false);
+            Assert.That(reader64.ReadNullTerminatedAsciiString(), Is.EqualTo(str64));
+            Assert.That(reader64.ReadByte(), Is.EqualTo(0x22));
+        }
+
+        [Test]
+        public void ReadNullTerminatedAsciiString_LongUnterminatedStringAcrossChunks_Throws()
+        {
+            var bytes = new byte[150];
+            for (var i = 0; i < bytes.Length; i++) bytes[i] = (byte)'a';
+            var reader = new SerializedFileByteReader(new InMemoryByteSource(bytes), 0, swap: false);
+
+            Assert.Throws<ArtifactInspectorException>(() => reader.ReadNullTerminatedAsciiString());
+        }
+
+        [Test]
         public void ReadUInt32_ShortRead_Throws()
         {
             var buffer = new byte[] { 1, 2 }; // only 2 bytes, need 4

@@ -14,6 +14,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
     {
         private readonly IRandomAccessByteSource _source;
         private readonly bool _swap;
+        private readonly byte[] _primitiveBuffer = new byte[8];
+        private readonly byte[] _asciiBuffer = new byte[64];
 
         internal SerializedFileByteReader(IRandomAccessByteSource source, long startPosition, bool swap)
         {
@@ -28,8 +30,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
         internal byte ReadByte()
         {
-            var buffer = ReadExact(1);
-            return buffer[0];
+            ReadBuffer(1);
+            return _primitiveBuffer[0];
         }
 
         internal short ReadInt16()
@@ -39,8 +41,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
         internal ushort ReadUInt16()
         {
-            var buffer = ReadExact(2);
-            var value = BitConverter.ToUInt16(buffer, 0);
+            ReadBuffer(2);
+            var value = BitConverter.ToUInt16(_primitiveBuffer, 0);
             return _swap ? EndianUtility.SwapUInt16(value) : value;
         }
 
@@ -51,8 +53,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
         internal uint ReadUInt32()
         {
-            var buffer = ReadExact(4);
-            var value = BitConverter.ToUInt32(buffer, 0);
+            ReadBuffer(4);
+            var value = BitConverter.ToUInt32(_primitiveBuffer, 0);
             return _swap ? EndianUtility.SwapUInt32(value) : value;
         }
 
@@ -63,8 +65,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
 
         internal ulong ReadUInt64()
         {
-            var buffer = ReadExact(8);
-            var value = BitConverter.ToUInt64(buffer, 0);
+            ReadBuffer(8);
+            var value = BitConverter.ToUInt64(_primitiveBuffer, 0);
             return _swap ? EndianUtility.SwapUInt64(value) : value;
         }
 
@@ -72,13 +74,47 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
         internal string ReadNullTerminatedAsciiString()
         {
             var sb = new StringBuilder();
-            byte b;
-            while ((b = ReadByte()) != 0)
+            while (true)
             {
-                sb.Append((char)b);
-            }
+                var remaining = _source.Length - Position;
+                if (remaining <= 0)
+                {
+                    throw new ArtifactInspectorException(
+                        "Unexpected end of data while reading 1 byte(s) at offset " + Position + ".");
+                }
 
-            return sb.ToString();
+                var toRead = (int)Math.Min(_asciiBuffer.Length, remaining);
+                var read = _source.Read(Position, _asciiBuffer, 0, toRead);
+                if (read <= 0)
+                {
+                    throw new ArtifactInspectorException(
+                        "Unexpected end of data while reading 1 byte(s) at offset " + Position + ".");
+                }
+
+                var nullIndex = Array.IndexOf(_asciiBuffer, (byte)0, 0, read);
+                if (nullIndex >= 0)
+                {
+                    Position += nullIndex + 1;
+                    if (nullIndex == 0 && sb.Length == 0)
+                    {
+                        return string.Empty;
+                    }
+
+                    for (var i = 0; i < nullIndex; i++)
+                    {
+                        sb.Append((char)_asciiBuffer[i]);
+                    }
+
+                    return sb.ToString();
+                }
+
+                for (var i = 0; i < read; i++)
+                {
+                    sb.Append((char)_asciiBuffer[i]);
+                }
+
+                Position += read;
+            }
         }
 
         /// <summary>Advances the cursor to the next 4-byte boundary measured from baseOffset.</summary>
@@ -95,10 +131,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             Position += byteCount;
         }
 
-        private byte[] ReadExact(int count)
+        private void ReadBuffer(int count)
         {
-            var buffer = new byte[count];
-            var read = _source.Read(Position, buffer, 0, count);
+            var read = _source.Read(Position, _primitiveBuffer, 0, count);
             if (read != count)
             {
                 throw new ArtifactInspectorException(
@@ -106,7 +141,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             }
 
             Position += count;
-            return buffer;
         }
     }
 }

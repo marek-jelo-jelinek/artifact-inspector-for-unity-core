@@ -218,16 +218,46 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             return ToReader().ReadRawBytes(relativeOffset, count);
         }
 
-        public int AsInt32() => ReadFixedOrFallback(4, BitConverter.ToInt32, r => r.AsInt32());
-        public uint AsUInt32() => ReadFixedOrFallback(4, BitConverter.ToUInt32, r => r.AsUInt32());
-        public long AsInt64() => ReadFixedOrFallback(8, BitConverter.ToInt64, r => r.AsInt64());
-        public ulong AsUInt64() => ReadFixedOrFallback(8, BitConverter.ToUInt64, r => r.AsUInt64());
-        public float AsSingle() => ReadFixedOrFallback(4, BitConverter.ToSingle, r => r.AsSingle());
-        public short AsInt16() => ReadFixedOrFallback(2, BitConverter.ToInt16, r => r.AsInt16());
-        public ushort AsUInt16() => ReadFixedOrFallback(2, BitConverter.ToUInt16, r => r.AsUInt16());
-        public sbyte AsSByte() => ReadFixedOrFallback(1, (buffer, i) => (sbyte)buffer[i], r => r.AsSByte());
-        public double AsDouble() => ReadFixedOrFallback(8, BitConverter.ToDouble, r => r.AsDouble());
-        public byte AsByte() => ReadFixedOrFallback(1, (buffer, i) => buffer[i], r => r.AsByte());
+        public int AsInt32() => _kind == Kind.Scalar && _scalarBytes.Length >= 4
+            ? BitConverter.ToInt32(_scalarBytes, 0)
+            : ToReader().AsInt32();
+
+        public uint AsUInt32() => _kind == Kind.Scalar && _scalarBytes.Length >= 4
+            ? BitConverter.ToUInt32(_scalarBytes, 0)
+            : ToReader().AsUInt32();
+
+        public long AsInt64() => _kind == Kind.Scalar && _scalarBytes.Length >= 8
+            ? BitConverter.ToInt64(_scalarBytes, 0)
+            : ToReader().AsInt64();
+
+        public ulong AsUInt64() => _kind == Kind.Scalar && _scalarBytes.Length >= 8
+            ? BitConverter.ToUInt64(_scalarBytes, 0)
+            : ToReader().AsUInt64();
+
+        public float AsSingle() => _kind == Kind.Scalar && _scalarBytes.Length >= 4
+            ? BitConverter.ToSingle(_scalarBytes, 0)
+            : ToReader().AsSingle();
+
+        public double AsDouble() => _kind == Kind.Scalar && _scalarBytes.Length >= 8
+            ? BitConverter.ToDouble(_scalarBytes, 0)
+            : ToReader().AsDouble();
+
+        public short AsInt16() => _kind == Kind.Scalar && _scalarBytes.Length >= 2
+            ? BitConverter.ToInt16(_scalarBytes, 0)
+            : ToReader().AsInt16();
+
+        public ushort AsUInt16() => _kind == Kind.Scalar && _scalarBytes.Length >= 2
+            ? BitConverter.ToUInt16(_scalarBytes, 0)
+            : ToReader().AsUInt16();
+
+        public byte AsByte() => _kind == Kind.Scalar && _scalarBytes.Length >= 1
+            ? _scalarBytes[0]
+            : ToReader().AsByte();
+
+        public sbyte AsSByte() => _kind == Kind.Scalar && _scalarBytes.Length >= 1
+            ? (sbyte)_scalarBytes[0]
+            : ToReader().AsSByte();
+
         public bool AsBoolean() => AsByte() != 0;
 
         /// <summary>Reads this field's value as a UTF-8-decoded string.</summary>
@@ -253,16 +283,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             BitConverter.GetBytes(_blob.Length).CopyTo(result, 0);
             _blob.CopyTo(result, 4);
             return result;
-        }
-
-        /// <summary>Reinterprets this field's cached raw bytes as T when it's a Scalar with enough bytes cached;
-        /// otherwise falls back to a live reader, exactly like TypeTreeReader would (a caller-error accessor
-        /// mismatch may then read past this field's own bytes -- that's the original, honest behavior too).</summary>
-        private T ReadFixedOrFallback<T>(int byteCount, Func<byte[], int, T> convert, Func<TypeTreeReader, T> fallback)
-        {
-            return _kind == Kind.Scalar && _scalarBytes.Length >= byteCount
-                ? convert(_scalarBytes, 0)
-                : fallback(ToReader());
         }
     }
 }

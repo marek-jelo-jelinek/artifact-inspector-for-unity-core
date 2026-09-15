@@ -15,6 +15,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
         // Struct-field resolution state.
         private readonly OffsetCursor _childCursor;
+        private readonly byte[] _scalarBuffer = new byte[8];
 
         // Array-element resolution state, initialized lazily on first use (needs ByteOffset + 4,
         // past the length prefix, which isn't known to be valid until an array access is made).
@@ -136,77 +137,88 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public int AsInt32()
         {
-            return ReadFixed(4, BitConverter.ToInt32);
+            ReadScalarBytes(4);
+            return BitConverter.ToInt32(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="uint"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public uint AsUInt32()
         {
-            return ReadFixed(4, BitConverter.ToUInt32);
+            ReadScalarBytes(4);
+            return BitConverter.ToUInt32(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="long"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public long AsInt64()
         {
-            return ReadFixed(8, BitConverter.ToInt64);
+            ReadScalarBytes(8);
+            return BitConverter.ToInt64(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="ulong"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public ulong AsUInt64()
         {
-            return ReadFixed(8, BitConverter.ToUInt64);
+            ReadScalarBytes(8);
+            return BitConverter.ToUInt64(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="float"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public float AsSingle()
         {
-            return ReadFixed(4, BitConverter.ToSingle);
+            ReadScalarBytes(4);
+            return BitConverter.ToSingle(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="short"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public short AsInt16()
         {
-            return ReadFixed(2, BitConverter.ToInt16);
+            ReadScalarBytes(2);
+            return BitConverter.ToInt16(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="ushort"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public ushort AsUInt16()
         {
-            return ReadFixed(2, BitConverter.ToUInt16);
+            ReadScalarBytes(2);
+            return BitConverter.ToUInt16(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as an <see cref="sbyte"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public sbyte AsSByte()
         {
-            return ReadFixed(1, (buffer, i) => (sbyte)buffer[i]);
+            ReadScalarBytes(1);
+            return (sbyte)_scalarBuffer[0];
         }
 
         /// <summary>Reads this field's value as a <see cref="double"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public double AsDouble()
         {
-            return ReadFixed(8, BitConverter.ToDouble);
+            ReadScalarBytes(8);
+            return BitConverter.ToDouble(_scalarBuffer, 0);
         }
 
         /// <summary>Reads this field's value as a <see cref="byte"/>.</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public byte AsByte()
         {
-            return ReadFixed(1, (buffer, i) => buffer[i]);
+            ReadScalarBytes(1);
+            return _scalarBuffer[0];
         }
 
         /// <summary>Reads this field's value as a <see cref="bool"/> (a nonzero byte).</summary>
         /// <exception cref="ArtifactInspectorException">The underlying data is truncated.</exception>
         public bool AsBoolean()
         {
-            return AsByte() != 0;
+            ReadScalarBytes(1);
+            return _scalarBuffer[0] != 0;
         }
 
         /// <summary>Reads this field's value as a UTF-8-decoded, length-prefixed <see cref="string"/>.</summary>
@@ -230,13 +242,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             return new PPtr(Field("m_FileID").AsInt32(), Field("m_PathID").AsInt64());
         }
 
-        private T ReadFixed<T>(int byteCount, Func<byte[], int, T> convert)
+        private void ReadScalarBytes(int count)
         {
-            var buffer = new byte[byteCount];
-            var read = _byteSource.Read(ByteOffset, buffer, 0, byteCount);
-            return read != byteCount
-                ? throw new ArtifactInspectorException($"Unexpected end of data while reading a {byteCount}-byte value at offset {ByteOffset}.")
-                : convert(buffer, 0);
+            var read = _byteSource.Read(ByteOffset, _scalarBuffer, 0, count);
+            if (read != count)
+            {
+                throw new ArtifactInspectorException(
+                    $"Unexpected end of data while reading a {count}-byte value at offset {ByteOffset}.");
+            }
         }
 
         private void RequireArray()

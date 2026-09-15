@@ -19,6 +19,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
     internal static class StrippedObjectNameReader
     {
         private const int MonoBehaviourClassId = 114;
+        private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+        [ThreadStatic]
+        private static byte[] t_lengthBuffer;
 
         /// <summary>
         /// <c>m_Name</c> sits at byte offset 0 for these classes: direct-or-indirect <c>NamedObject</c>
@@ -106,7 +110,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                 return null;
             }
 
-            var lengthBuffer = new byte[4];
+            var lengthBuffer = t_lengthBuffer ??= new byte[4];
             if (source.Read(offset, lengthBuffer, 0, 4) != 4)
             {
                 return null;
@@ -133,8 +137,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             string name;
             try
             {
-                var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-                name = encoding.GetString(contentBuffer);
+                name = StrictUtf8.GetString(contentBuffer);
             }
             catch (DecoderFallbackException)
             {

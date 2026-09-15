@@ -33,10 +33,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
         }
 
         /// <summary>Dispatches a single object through the registry, falling back to a RawObject for anything unrecognized.</summary>
-        public object Adapt(ObjectRef objectRef, SerializedFile serializedFile, ArtifactArchive archive)
+        public object Adapt(ObjectRef objectRef, SerializedFile serializedFile, ArtifactArchive archive = null)
         {
             if (serializedFile == null) throw new ArgumentNullException(nameof(serializedFile));
-            if (archive == null) throw new ArgumentNullException(nameof(archive));
 
             TypeTreeReader reader;
             try
@@ -55,6 +54,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
 
             var context = new ArtifactAdapterContext(objectRef, reader, serializedFile, archive);
             return TryResolve(context, out var adapter) ? adapter.Read(context) : new RawObject(objectRef, reader.TypeName);
+        }
+
+        /// <summary>Dispatches every object in serializedFile, in declaration order or ordered by ByteOffset.</summary>
+        public IEnumerable<object> Inspect(SerializedFile serializedFile, bool orderByOffset = false)
+        {
+            if (serializedFile == null) throw new ArgumentNullException(nameof(serializedFile));
+
+            return InspectObjects(serializedFile, archive: null, orderByOffset);
         }
 
         /// <summary>Dispatches every object in serializedFile, in declaration order or ordered by ByteOffset.</summary>

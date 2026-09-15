@@ -129,6 +129,83 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Adapters
             Assert.That(results[0], Is.InstanceOf<RawObject>());
         }
 
+        [Test]
+        public void Adapt_LooseSerializedFile_WithoutArchive_ReturnsItsReadResult()
+        {
+            var (serializedFile, objectRef) = CreateLooseSerializedFileWithOneObject();
+            var expected = new object();
+            var adapter = new StubArtifactAdapter { MatchesFunc = _ => true, ReadFunc = _ => expected };
+            var registry = new ArtifactAdapterRegistry().Register(adapter);
+
+            var result = registry.Adapt(objectRef, serializedFile);
+
+            Assert.That(result, Is.SameAs(expected));
+        }
+
+        [Test]
+        public void Adapt_LooseSerializedFile_AdapterCanSafelyInspectNullArchive()
+        {
+            var (serializedFile, objectRef) = CreateLooseSerializedFileWithOneObject();
+            var (_, dummyArchive, _) = CreateSerializedFileWithOneObject();
+            ArtifactArchive observedArchive = dummyArchive;
+            var adapter = new StubArtifactAdapter
+            {
+                MatchesFunc = _ => true,
+                ReadFunc = ctx =>
+                {
+                    observedArchive = ctx.Archive;
+                    return "adapted";
+                }
+            };
+            var registry = new ArtifactAdapterRegistry().Register(adapter);
+
+            var result = registry.Adapt(objectRef, serializedFile);
+
+            Assert.That(result, Is.EqualTo("adapted"));
+            Assert.That(observedArchive, Is.Null);
+        }
+
+        [Test]
+        public void Inspect_LooseSerializedFile_DispatchesEveryObjectThroughTheRegistry()
+        {
+            var (serializedFile, _) = CreateLooseSerializedFileWithOneObject();
+            var registry = new ArtifactAdapterRegistry();
+
+            var results = registry.Inspect(serializedFile).ToList();
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0], Is.InstanceOf<RawObject>());
+        }
+
+        [Test]
+        public void Inspect_LooseSerializedFile_WithOrderByOffset_Succeeds()
+        {
+            var (serializedFile, _) = CreateLooseSerializedFileWithOneObject();
+            var registry = new ArtifactAdapterRegistry();
+
+            var results = registry.Inspect(serializedFile, orderByOffset: true).ToList();
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0], Is.InstanceOf<RawObject>());
+        }
+
+        [Test]
+        public void Inspect_LooseSerializedFile_NullFile_ThrowsArgumentNullException()
+        {
+            var registry = new ArtifactAdapterRegistry();
+
+            Assert.Throws<System.ArgumentNullException>(() => registry.Inspect((SerializedFile)null));
+        }
+
+        [Test]
+        public void Inspect_SerializedFileWithArchive_NullArchive_ThrowsArgumentNullException()
+        {
+            var (serializedFile, _) = CreateLooseSerializedFileWithOneObject();
+            var registry = new ArtifactAdapterRegistry();
+
+            Assert.Throws<System.ArgumentNullException>(() => registry.Inspect(serializedFile, (ArtifactArchive)null));
+        }
+
         private static (SerializedFile SerializedFile, ArtifactArchive Archive, ObjectRef ObjectRef) CreateSerializedFileWithOneObject()
         {
             var api = new FakeUnityFileSystemApi();
@@ -143,6 +220,19 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Adapters
 
             serializedFile.TryGetObject(1, out var objectRef);
             return (serializedFile, archive, objectRef);
+        }
+
+        private static (SerializedFile SerializedFile, ObjectRef ObjectRef) CreateLooseSerializedFileWithOneObject()
+        {
+            var api = new FakeUnityFileSystemApi();
+            api.Objects.Add(new ObjectInfo { Id = 1, Offset = 0, Size = 4, TypeId = 1 });
+
+            var serializedFileHandle = new SerializedFileHandle(api, api.NextHandle());
+            var fileHandle = new FileHandle(api, api.NextHandle());
+            var serializedFile = new SerializedFile(serializedFileHandle, fileHandle, new TypeTreeCache());
+
+            serializedFile.TryGetObject(1, out var objectRef);
+            return (serializedFile, objectRef);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
 
 namespace Tesearis.ArtifactInspectorForUnity.Core.Model
@@ -5,7 +6,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
     /// <summary>
     /// A reference to one object inside a SerializedFile.
     /// </summary>
-    public readonly struct ObjectRef
+    public readonly struct ObjectRef : IEquatable<ObjectRef>
     {
         private readonly SerializedFile _owner;
 
@@ -40,5 +41,36 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             return _owner.GetOrBuildSnapshotForRef(this, options);
         }
+
+        public bool Equals(ObjectRef other)
+        {
+            return ReferenceEquals(_owner, other._owner) &&
+                   PathId == other.PathId &&
+                   TypeId == other.TypeId &&
+                   ByteOffset == other.ByteOffset &&
+                   ByteSize == other.ByteSize;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is ObjectRef other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                var hash = _owner != null ? _owner.GetHashCode() : 0;
+                hash = (hash * 397) ^ PathId.GetHashCode();
+                hash = (hash * 397) ^ TypeId;
+                return hash;
+            }
+        }
+
+        public static bool operator ==(ObjectRef left, ObjectRef right) => left.Equals(right);
+
+        public static bool operator !=(ObjectRef left, ObjectRef right) => !left.Equals(right);
+
+        public override string ToString() => $"ObjectRef(PathId: {PathId}, TypeId: {TypeId}, ByteOffset: {ByteOffset}, ByteSize: {ByteSize})";
     }
 }

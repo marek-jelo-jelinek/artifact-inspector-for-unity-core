@@ -8,7 +8,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
     /// external-reference table (<see cref="FileId"/>; 0 means "this file") plus the target
     /// object's path ID within that file (<see cref="PathId"/>).
     /// </summary>
-    public readonly struct PPtr
+    public readonly struct PPtr : IEquatable<PPtr>
     {
         public int FileId { get; }
         public long PathId { get; }
@@ -25,6 +25,27 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// <summary>True when this reference targets an object in the same file (resolve via <see cref="SerializedFile.TryGetObject"/>).</summary>
         public bool IsLocal => FileId == 0;
 
+        public bool Equals(PPtr other)
+        {
+            return FileId == other.FileId && PathId == other.PathId;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is PPtr other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return unchecked((FileId * 397) ^ PathId.GetHashCode());
+        }
+
+        public static bool operator ==(PPtr left, PPtr right) => left.Equals(right);
+
+        public static bool operator !=(PPtr left, PPtr right) => !left.Equals(right);
+
+        public override string ToString() => $"PPtr(FileId: {FileId}, PathId: {PathId})";
+
         /// <summary>
         /// Resolves this reference to a cached <see cref="ObjectSnapshot"/> in <paramref name="owningFile"/>,
         /// when it's <see cref="IsLocal"/> and the target PathId exists. Once the target is warmed (cached),
@@ -36,13 +57,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         {
             if (owningFile == null) throw new ArgumentNullException(nameof(owningFile));
 
-            if (!IsLocal)
-            {
-                snapshot = default;
-                return false;
-            }
+            if (IsLocal) return owningFile.TryGetSnapshot(PathId, out snapshot, options);
+            snapshot = default;
+            return false;
 
-            return owningFile.TryGetSnapshot(PathId, out snapshot, options);
         }
     }
 }

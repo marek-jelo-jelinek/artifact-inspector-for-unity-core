@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
@@ -8,8 +9,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
 {
     public static class ArtifactInspector
     {
-        private static Lazy<UnityFileSystemLibraryHandle> Library =
-            new(UnityFileSystemLibraryHandle.LoadAndInit, System.Threading.LazyThreadSafetyMode.PublicationOnly);
+        private static Lazy<UnityFileSystemLibraryHandle> _library = new(UnityFileSystemLibraryHandle.LoadAndInit,
+            LazyThreadSafetyMode.ExecutionAndPublication);
 
         /// <summary>Mounts a built archive (an asset bundle or player-build data file) and returns a handle to it.</summary>
         public static ArtifactArchive OpenAssetBundle(string filePath)
@@ -55,7 +56,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
         public static void SetupLibraryPath(string unityFileSystemApiLibraryPath)
         {
             if (unityFileSystemApiLibraryPath == null) throw new ArgumentNullException(nameof(unityFileSystemApiLibraryPath));
-            if (Library.IsValueCreated)
+            if (_library.IsValueCreated)
             {
                 throw new InvalidOperationException(
                     "SetupLibraryPath must be called before any other Tesearis.ArtifactInspectorForUnity.Core call. " +
@@ -100,7 +101,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
         /// <exception cref="NativeFeatureNotSupportedException">The loaded native library doesn't export UFS_GetUnityVersion.</exception>
         public static string GetUnityEditorVersion() => GetLibrary().Api.GetUnityVersion();
 
-        private static UnityFileSystemLibraryHandle GetLibrary() => Library.Value;
+        private static UnityFileSystemLibraryHandle GetLibrary() => _library.Value;
 
         /// <summary>
         /// Test-only seam: disposes the currently loaded native library (if any -- a no-op otherwise)
@@ -115,13 +116,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
         /// </summary>
         internal static void ResetForTests()
         {
-            if (Library.IsValueCreated)
+            if (_library.IsValueCreated)
             {
-                Library.Value.Dispose();
+                _library.Value.Dispose();
             }
 
-            Library = new Lazy<UnityFileSystemLibraryHandle>(
-                UnityFileSystemLibraryHandle.LoadAndInit, System.Threading.LazyThreadSafetyMode.PublicationOnly);
+            _library = new Lazy<UnityFileSystemLibraryHandle>(UnityFileSystemLibraryHandle.LoadAndInit, LazyThreadSafetyMode.ExecutionAndPublication);
         }
     }
 }

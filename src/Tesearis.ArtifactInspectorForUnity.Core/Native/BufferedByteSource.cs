@@ -17,6 +17,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native
         private const int BufferSize = 64 * 1024;
 
         private readonly IRandomAccessByteSource _inner;
+        private readonly object _lock = new();
         private readonly byte[] _buffer = new byte[BufferSize];
         private long _bufferStart;
         private int _bufferLength;
@@ -34,16 +35,19 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native
             // clobber the current window anyway. Read straight from the inner source.
             if (count > BufferSize) return _inner.Read(offset, buffer, bufferOffset, count);
 
-            if (!IsBuffered(offset, count))
+            lock (_lock)
             {
-                RefillBuffer(offset);
+                if (!IsBuffered(offset, count))
+                {
+                    RefillBuffer(offset);
+                }
+
+                var available = (int)Math.Min(count, _bufferLength - (offset - _bufferStart));
+                if (available <= 0) return 0;
+
+                Buffer.BlockCopy(_buffer, (int)(offset - _bufferStart), buffer, bufferOffset, available);
+                return available;
             }
-
-            var available = (int)Math.Min(count, _bufferLength - (offset - _bufferStart));
-            if (available <= 0) return 0;
-
-            Buffer.BlockCopy(_buffer, (int)(offset - _bufferStart), buffer, bufferOffset, available);
-            return available;
         }
 
         private bool IsBuffered(long offset, int count) =>

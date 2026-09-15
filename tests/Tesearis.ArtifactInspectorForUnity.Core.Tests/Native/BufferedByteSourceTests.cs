@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
 using NUnit.Framework;
@@ -125,6 +126,34 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Native
         public void Constructor_NullInner_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() => new BufferedByteSource(null));
+        }
+
+        [Test]
+        public void Read_ConcurrentAccessFromMultipleThreads_ReturnsExpectedDataWithoutErrors()
+        {
+            const int totalSize = BufferSize * 16;
+            var data = SequentialBytes(totalSize);
+            var inner = new InMemoryByteSource(data);
+            var source = new BufferedByteSource(inner);
+
+            const int iterations = 5000;
+            const int readSize = 32;
+
+            Assert.DoesNotThrow(() =>
+            {
+                Parallel.For(0, iterations, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2 }, i =>
+                {
+                    var offset = (long)((i * 104729L) % (totalSize - readSize));
+                    var buffer = new byte[readSize];
+                    var bytesRead = source.Read(offset, buffer, 0, readSize);
+
+                    Assert.That(bytesRead, Is.EqualTo(readSize));
+                    for (var j = 0; j < readSize; j++)
+                    {
+                        Assert.That(buffer[j], Is.EqualTo(data[offset + j]));
+                    }
+                });
+            });
         }
     }
 }

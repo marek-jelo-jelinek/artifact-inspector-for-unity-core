@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Native.Handles;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
@@ -203,10 +202,17 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             {
                 ThrowIfDisposed();
 
-                IEnumerable<ObjectRef> candidates = _objects;
-                if (options.TypeIdFilter != null) candidates = candidates.Where(o => options.TypeIdFilter(o.TypeId));
+                var ordered = new List<ObjectRef>(_objects.Count);
+                for (var i = 0; i < _objects.Count; i++)
+                {
+                    var obj = _objects[i];
+                    if (options.TypeIdFilter == null || options.TypeIdFilter(obj.TypeId))
+                    {
+                        ordered.Add(obj);
+                    }
+                }
 
-                var ordered = candidates.OrderBy(o => o.ByteOffset);
+                ordered.Sort((a, b) => a.ByteOffset.CompareTo(b.ByteOffset));
 
                 var succeeded = 0;
                 var failures = new List<(long PathId, Exception Error)>();

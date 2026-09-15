@@ -157,7 +157,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
             // Variable-shaped elements (nested arrays, strings in structs, ...): decode while accumulating
             // size, bailing out to a deferred field the moment the threshold is crossed.
-            var variableElements = new List<SnapshotField>();
+            var variableElements = new List<SnapshotField>(Math.Min(count, 128));
             var currentOffset = offset + 4;
             for (var i = 0; i < count; i++)
             {

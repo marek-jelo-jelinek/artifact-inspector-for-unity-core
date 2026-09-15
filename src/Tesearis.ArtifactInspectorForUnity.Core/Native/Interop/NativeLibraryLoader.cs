@@ -8,6 +8,38 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
     /// </summary>
     internal static class NativeLibraryLoader
     {
+#if NET8_0_OR_GREATER
+        internal static IntPtr Load(string path)
+        {
+            if (string.IsNullOrEmpty(path)) throw new ArgumentException("Native library path must not be null or empty.", nameof(path));
+            try
+            {
+                return NativeLibrary.Load(path);
+            }
+            catch (Exception ex)
+            {
+                throw new ArtifactInspectorException($"Failed to load native library at '{path}': {ex.Message}", ex);
+            }
+        }
+
+        internal static IntPtr GetExport(IntPtr libraryHandle, string symbolName)
+        {
+            try
+            {
+                return NativeLibrary.GetExport(libraryHandle, symbolName);
+            }
+            catch (Exception ex)
+            {
+                throw new ArtifactInspectorException($"Native symbol '{symbolName}' was not found: {ex.Message}", ex);
+            }
+        }
+
+        internal static void Free(IntPtr libraryHandle)
+        {
+            if (libraryHandle != IntPtr.Zero)
+                NativeLibrary.Free(libraryHandle);
+        }
+#else
         internal static IntPtr Load(string path)
         {
             if (string.IsNullOrEmpty(path)) throw new ArgumentException("Native library path must not be null or empty.", nameof(path));
@@ -134,5 +166,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native.Interop
                 return message == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(message);
             }
         }
+#endif
     }
 }

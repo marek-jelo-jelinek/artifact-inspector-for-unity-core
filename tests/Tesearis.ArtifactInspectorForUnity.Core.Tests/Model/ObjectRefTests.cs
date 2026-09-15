@@ -176,5 +176,22 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
 
             Assert.That(obj.ToString(), Is.EqualTo("ObjectRef(PathId: 100, TypeId: 28, ByteOffset: 1024, ByteSize: 512)"));
         }
+
+        [Test]
+        public void ClassName_DefaultObjectRef_ReturnsEmpty()
+        {
+            var def = default(ObjectRef);
+            Assert.That(def.ClassName, Is.EqualTo(string.Empty));
+        }
+
+        [Test]
+        public void ClassName_ValidObject_ReturnsTypeName()
+        {
+            var api = new FakeUnityFileSystemApi();
+            using var file = CreateFile(api);
+
+            var obj = new ObjectRef(file, 100L, 1, 10L, 20L);
+            Assert.That(obj.ClassName, Is.EqualTo("int"));
+        }
     }
 }

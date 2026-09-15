@@ -24,7 +24,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             ByteSize = byteSize;
         }
 
-        public string ClassName => GetReader().TypeName;
+        public string ClassName => _owner != null ? _owner.GetTypeName(PathId, TypeId) : string.Empty;
 
         public TypeTreeReader GetReader()
         {

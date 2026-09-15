@@ -127,6 +127,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             return false;
         }
 
+        internal string GetTypeName(long pathId, int typeId)
+        {
+            return Guarded(() => _typeTreeCache.GetOrBuild(_handle, pathId, typeId).TypeName);
+        }
+
         internal TypeTreeReader CreateReader(long pathId, int typeId, long byteOffset)
         {
             return Guarded(() =>

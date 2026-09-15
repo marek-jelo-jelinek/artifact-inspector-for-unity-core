@@ -141,7 +141,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             {
                 var reader = new SerializedFileByteReader(source, header.MetadataStartOffset, header.IsBigEndian);
 
-                var version = reader.ReadNullTerminatedAsciiString();
+                var version = reader.ReadNullTerminatedUtf8String();
                 if (version.Length is 0 or > 64)
                 {
                     error = "Unity version string has unexpected length (" + version.Length + ").";
@@ -222,14 +222,14 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             externalReferences = new List<ExternalReference>(externalsCount);
             for (var i = 0; i < externalsCount; i++)
             {
-                reader.ReadNullTerminatedAsciiString();
+                reader.ReadNullTerminatedUtf8String();
                 var d0 = reader.ReadUInt32();
                 var d1 = reader.ReadUInt32();
                 var d2 = reader.ReadUInt32();
                 var d3 = reader.ReadUInt32();
                 var guid = GuidFormatting.FormatUnityGuid(d0, d1, d2, d3);
                 var type = (ExternalReferenceType)reader.ReadInt32();
-                var pathName = reader.ReadNullTerminatedAsciiString();
+                var pathName = reader.ReadNullTerminatedUtf8String();
                 externalReferences.Add(new ExternalReference(pathName, guid, type));
             }
 

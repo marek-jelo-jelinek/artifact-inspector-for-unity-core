@@ -39,7 +39,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
         private readonly object _lock = new();
 
-        private static bool CanShareAcrossInstances(int typeId) => typeId != MonoBehaviourTypeId;
+        private static bool CanShareAcrossInstances(int typeId) => typeId > 0 && typeId != MonoBehaviourTypeId;
 
         /// <summary>Thread-safe.</summary>
         internal TypeTreeNode GetOrBuild(SerializedFileHandle file, long objectId, int typeId)

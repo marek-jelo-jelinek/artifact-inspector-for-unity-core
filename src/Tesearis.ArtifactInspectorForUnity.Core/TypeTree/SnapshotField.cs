@@ -167,7 +167,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             return _kind switch
             {
                 Kind.Deferred => _deferredReader.ArrayLength(),
-                Kind.ByteBlob => _blob.Length,
+                Kind.ByteBlob when _node?.IsArrayLike == true => _blob.Length,
+                Kind.ByteBlob => throw new ArtifactInspectorException($"Type '{TypeName}' is not an array/vector/map field."),
                 Kind.Elements => _elements.Length,
                 _ => throw new ArtifactInspectorException($"Type '{TypeName}' is not an array/vector/map field."),
             };
@@ -185,7 +186,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             return _kind switch
             {
                 Kind.Deferred => WrapDeferred(_deferredReader.Element(index)),
-                Kind.ByteBlob => Scalar(_node.Children[1], _byteSource, _byteOffset + 4 + index, new[] { _blob[index] }),
+                Kind.ByteBlob when _node?.Children.Count >= 2 => Scalar(_node.Children[1], _byteSource, _byteOffset + 4 + index, new[] { _blob[index] }),
+                Kind.ByteBlob => throw new ArtifactInspectorException($"Type '{TypeName}' is not an array/vector/map field."),
                 Kind.Elements => _elements[index],
                 _ => throw new ArtifactInspectorException($"Type '{TypeName}' is not an array/vector/map field."), // unreachable: ArrayLength() already threw
             };

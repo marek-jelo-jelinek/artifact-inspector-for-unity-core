@@ -41,6 +41,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
             try
             {
                 reader = objectRef.GetReader();
+                var context = new ArtifactAdapterContext(objectRef, reader, serializedFile, archive);
+                return TryResolve(context, out var adapter) ? adapter.Read(context) : new RawObject(objectRef, reader.TypeName);
             }
             catch (UnsupportedManagedReferenceShapeException)
             {
@@ -51,9 +53,6 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
                 // files with no TypeTree at all.
                 return new RawObject(objectRef, TypeIdRegistry.GetTypeName(objectRef.TypeId));
             }
-
-            var context = new ArtifactAdapterContext(objectRef, reader, serializedFile, archive);
-            return TryResolve(context, out var adapter) ? adapter.Read(context) : new RawObject(objectRef, reader.TypeName);
         }
 
         /// <summary>Dispatches every object in serializedFile, in declaration order or ordered by ByteOffset.</summary>

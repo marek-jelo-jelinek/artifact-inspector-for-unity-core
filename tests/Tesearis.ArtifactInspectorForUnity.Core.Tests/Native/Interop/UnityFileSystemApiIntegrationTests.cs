@@ -29,6 +29,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Native.Interop
             UnityFileSystemApi.SetupLibraryPath(path);
         }
 
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            ArtifactInspector.ResetForTests();
+        }
+
         [Test]
         public void LoadAndInit_RealNativeLibrary_LoadsAndResolvesAllExports()
         {

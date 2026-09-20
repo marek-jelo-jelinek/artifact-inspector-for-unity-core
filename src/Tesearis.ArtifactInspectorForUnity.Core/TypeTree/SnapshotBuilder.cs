@@ -107,7 +107,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 return BuildByteLikePayload(node, offset, byteSource, options, count);
             }
 
-            if (TypeTreeOffsetWalker.TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            if (elementTemplate.TryGetConstantByteSize(out var constantElementSize))
             {
                 var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
                 var totalDataBytes = count * stride;

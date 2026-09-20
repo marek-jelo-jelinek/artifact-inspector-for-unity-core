@@ -275,7 +275,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
             // Fast path: if the element has a constant size, its offset is a simple multiplication —
             // no cursor advancement or prior-element reads required.
-            if (TypeTreeOffsetWalker.TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            if (elementTemplate.TryGetConstantByteSize(out var constantElementSize))
             {
                 var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
                 var offset = ByteOffset + 4 + (long)index * stride;

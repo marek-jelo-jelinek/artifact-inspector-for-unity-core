@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;

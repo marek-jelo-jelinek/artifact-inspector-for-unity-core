@@ -170,7 +170,9 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                     () => IsPositivelyMissingTypeTrees(entryName),
                     () =>
                     {
-                        if (_entrySizesByName.TryGetValue(entryName, out var size) && (size <= 0 || size > MaxInMemorySerializedFileSize))
+                        var cleanName = entryName.TrimStart('/');
+                        if ((_entrySizesByName.TryGetValue(entryName, out var size) || _entrySizesByName.TryGetValue(cleanName, out size))
+                            && (size <= 0 || size > MaxInMemorySerializedFileSize))
                         {
                             return null;
                         }

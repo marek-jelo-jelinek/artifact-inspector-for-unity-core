@@ -55,7 +55,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
                         if (fileInfo.Exists && fileInfo.Length > 0 && fileInfo.Length <= ArtifactArchive.MaxInMemorySerializedFileSize)
                         {
                             using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                            var buffer = new byte[stream.Length];
+                            var streamLength = stream.Length;
+                            if (streamLength <= 0 || streamLength > ArtifactArchive.MaxInMemorySerializedFileSize)
+                            {
+                                return null;
+                            }
+
+                            var buffer = new byte[(int)streamLength];
                             var read = 0;
                             while (read < buffer.Length)
                             {

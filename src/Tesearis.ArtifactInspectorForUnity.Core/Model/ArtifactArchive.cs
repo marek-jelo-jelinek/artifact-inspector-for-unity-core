@@ -18,6 +18,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         private readonly string _mountPoint;
         private readonly List<string> _entryNames;
         private readonly List<ArchiveEntryInfo> _entries;
+        private readonly Dictionary<string, long> _entrySizesByName = new();
         private readonly Dictionary<string, FileHandle> _openFilesByEntryName = new();
         private readonly Dictionary<string, IRandomAccessByteSource> _byteSourcesByEntryName = new();
         private readonly HashSet<SerializedFile> _openSerializedFiles = new();
@@ -74,6 +75,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                         if ((node.Flags & (ArchiveNodeFlags.Directory | ArchiveNodeFlags.Deleted)) == ArchiveNodeFlags.None)
                         {
                             _entries.Add(new ArchiveEntryInfo(node.Path, node.Size, node.IsSerializedFile));
+                            _entrySizesByName[node.Path] = node.Size;
                         }
                     }
                 });
@@ -146,7 +148,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// Archive SerializedFile entries at or below this uncompressed size are read into an in-memory byte array
         /// on open, eliminating thousands of native seek/read round-trips and decompressor thrashing during inspection.
         /// </summary>
-        private const long MaxInMemorySerializedFileSize = 64 * 1024 * 1024; // 64 MiB
+        internal const long MaxInMemorySerializedFileSize = 64 * 1024 * 1024; // 64 MiB
 
         /// <summary>Opens one SerializedFile entry from this archive by name.</summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
@@ -168,6 +170,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
                     () => IsPositivelyMissingTypeTrees(entryName),
                     () =>
                     {
+                        if (_entrySizesByName.TryGetValue(entryName, out var size) && (size <= 0 || size > MaxInMemorySerializedFileSize))
+                        {
+                            return null;
+                        }
+
                         var rawSource = OpenRawByteSource(entryName);
                         if (rawSource.Length > 0 && rawSource.Length <= MaxInMemorySerializedFileSize)
                         {

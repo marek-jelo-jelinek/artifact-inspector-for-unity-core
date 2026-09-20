@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat;
 using Tesearis.ArtifactInspectorForUnity.Core.Model;
@@ -41,7 +42,41 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
             if (filePath == null) throw new ArgumentNullException(nameof(filePath));
 
             var api = GetLibrary().Api;
-            return SerializedFileOpener.Open(api, filePath, filePath, () => SerializedFileDetector.IsMissingTypeTrees(filePath));
+            return SerializedFileOpener.Open(
+                api,
+                filePath,
+                filePath,
+                () => SerializedFileDetector.IsMissingTypeTrees(filePath),
+                () =>
+                {
+                    try
+                    {
+                        var fileInfo = new FileInfo(filePath);
+                        if (fileInfo.Exists && fileInfo.Length > 0 && fileInfo.Length <= ArtifactArchive.MaxInMemorySerializedFileSize)
+                        {
+                            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                            var buffer = new byte[stream.Length];
+                            var read = 0;
+                            while (read < buffer.Length)
+                            {
+                                var chunk = stream.Read(buffer, read, buffer.Length - read);
+                                if (chunk == 0) break;
+                                read += chunk;
+                            }
+
+                            if (read == buffer.Length)
+                            {
+                                return new InMemoryByteSource(buffer);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Fall back to native file handle stream
+                    }
+
+                    return null;
+                });
         }
 
         /// <summary>

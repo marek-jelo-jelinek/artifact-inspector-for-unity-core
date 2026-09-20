@@ -46,9 +46,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             FileHandle fileHandle = null;
             try
             {
-                var rawFileHandle = api.OpenFile(path);
-                fileHandle = new FileHandle(api, rawFileHandle);
                 var byteSource = byteSourceFactory?.Invoke();
+                if (byteSource == null)
+                {
+                    var rawFileHandle = api.OpenFile(path);
+                    fileHandle = new FileHandle(api, rawFileHandle);
+                }
+
                 return new SerializedFile(serializedFileHandle, fileHandle, new TypeTreeCache(), byteSource);
             }
             catch

@@ -24,7 +24,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             if (bufferOffset < 0) throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset must not be negative.");
             if (count < 0) throw new ArgumentOutOfRangeException(nameof(count), count, "Count must not be negative.");
             if (buffer.Length - bufferOffset < count) throw new ArgumentException("Buffer is too small for the requested count.", nameof(buffer));
-            if (offset < 0 || offset >= _data.Length || count == 0) return 0;
+            if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset must not be negative.");
+            if (offset >= _data.Length || count == 0) return 0;
 
             var available = (int)Math.Min(count, _data.Length - offset);
             Buffer.BlockCopy(_data, (int)offset, buffer, bufferOffset, available);

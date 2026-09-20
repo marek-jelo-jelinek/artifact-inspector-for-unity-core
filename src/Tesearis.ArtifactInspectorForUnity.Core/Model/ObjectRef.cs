@@ -28,6 +28,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
 
         public TypeTreeReader GetReader()
         {
+            if (_owner == null) throw new InvalidOperationException("Cannot get reader without an owning SerializedFile.");
             return _owner.CreateReader(PathId, TypeId, ByteOffset);
         }
 
@@ -39,6 +40,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// </summary>
         public ObjectSnapshot Snapshot(MaterializeOptions options = null)
         {
+            if (_owner == null) throw new InvalidOperationException("Cannot build a snapshot without an owning SerializedFile.");
             return _owner.GetOrBuildSnapshotForRef(this, options);
         }
 

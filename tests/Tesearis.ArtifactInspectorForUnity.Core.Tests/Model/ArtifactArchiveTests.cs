@@ -97,6 +97,21 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         }
 
         [Test]
+        public void OpenSerializedFile_SmallEntry_BuffersInMemoryWithoutSecondFileHandle()
+        {
+            var api = new FakeUnityFileSystemApi();
+            api.Content = new byte[10];
+            var archive = CreateArchive(api, ("entry", 10, ArchiveNodeFlags.SerializedFile));
+            var openCallsBefore = api.OpenFileCallCount;
+
+            using var serializedFile = archive.OpenSerializedFile("entry");
+
+            // Exactly one FileHandle was opened during OpenSerializedFile (cached in ArtifactArchive for reading raw entry bytes).
+            // SerializedFileOpener must not have opened a second redundant FileHandle.
+            Assert.That(api.OpenFileCallCount - openCallsBefore, Is.EqualTo(1));
+        }
+
+        [Test]
         public void Dispose_WithOutstandingSerializedFile_InvalidatesIt()
         {
             var api = new FakeUnityFileSystemApi();

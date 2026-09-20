@@ -193,5 +193,19 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
             var obj = new ObjectRef(file, 100L, 1, 10L, 20L);
             Assert.That(obj.ClassName, Is.EqualTo("int"));
         }
+
+        [Test]
+        public void GetReader_DefaultObjectRef_ThrowsInvalidOperationException()
+        {
+            var def = default(ObjectRef);
+            Assert.Throws<System.InvalidOperationException>(() => def.GetReader());
+        }
+
+        [Test]
+        public void Snapshot_DefaultObjectRef_ThrowsInvalidOperationException()
+        {
+            var def = default(ObjectRef);
+            Assert.Throws<System.InvalidOperationException>(() => def.Snapshot());
+        }
     }
 }

@@ -61,7 +61,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
             // loop entirely and compute the total array size with a single multiplication.  This is the
             // common case for primitive buffers (UInt8[], UInt16[], float[]) and fixed structs (Vector3[],
             // etc.) such as mesh vertex/index buffers, which can be hundreds of thousands of elements long.
-            if (TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            if (elementTemplate.TryGetConstantByteSize(out var constantElementSize))
             {
                 // Account for per-element alignment padding (rare for primitive element types, but correct).
                 var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;

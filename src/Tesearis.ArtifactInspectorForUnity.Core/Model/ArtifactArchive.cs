@@ -142,6 +142,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
         public IReadOnlyList<ArchiveEntryInfo> Entries => Guarded<IReadOnlyList<ArchiveEntryInfo>>(() => _entries);
 
+        /// <summary>
+        /// Archive SerializedFile entries at or below this uncompressed size are read into an in-memory byte array
+        /// on open, eliminating thousands of native seek/read round-trips and decompressor thrashing during inspection.
+        /// </summary>
+        private const long MaxInMemorySerializedFileSize = 64 * 1024 * 1024; // 64 MiB
+
         /// <summary>Opens one SerializedFile entry from this archive by name.</summary>
         /// <exception cref="ObjectDisposedException">This archive has been disposed.</exception>
         /// <exception cref="SerializedFileOpenException">
@@ -156,7 +162,20 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             {
                 var virtualPath = ResolveVirtualPath(entryName);
                 var serializedFile = SerializedFileOpener.Open(
-                    _api, virtualPath, entryName, () => IsPositivelyMissingTypeTrees(entryName));
+                    _api,
+                    virtualPath,
+                    entryName,
+                    () => IsPositivelyMissingTypeTrees(entryName),
+                    () =>
+                    {
+                        var rawSource = OpenRawByteSource(entryName);
+                        if (rawSource.Length > 0 && rawSource.Length <= MaxInMemorySerializedFileSize)
+                        {
+                            return new InMemoryByteSource(ReadRawEntry(entryName));
+                        }
+
+                        return null;
+                    });
                 serializedFile.SetOwner(RemoveSerializedFile);
                 _openSerializedFiles.Add(serializedFile);
                 return serializedFile;

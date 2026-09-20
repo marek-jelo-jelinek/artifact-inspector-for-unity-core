@@ -27,7 +27,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         /// <param name="path">The virtual path (archive-relative) or real filesystem path (loose file) to open.</param>
         /// <param name="label">Used only for the exception message/EntryName -- an archive entry name, or the loose file's path.</param>
         /// <param name="isPositivelyMissingTypeTrees">Best-effort check for the missing-TypeTrees triage; see <see cref="SafeInvoke"/>.</param>
-        internal static SerializedFile Open(IUnityFileSystemApi api, string path, string label, Func<bool> isPositivelyMissingTypeTrees)
+        /// <param name="byteSourceFactory">Optional factory to produce an in-memory byte source for zero-seek reads.</param>
+        internal static SerializedFile Open(IUnityFileSystemApi api, string path, string label, Func<bool> isPositivelyMissingTypeTrees, Func<IRandomAccessByteSource> byteSourceFactory = null)
         {
             SerializedFileHandle serializedFileHandle;
             try
@@ -47,7 +48,8 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             {
                 var rawFileHandle = api.OpenFile(path);
                 fileHandle = new FileHandle(api, rawFileHandle);
-                return new SerializedFile(serializedFileHandle, fileHandle, new TypeTreeCache());
+                var byteSource = byteSourceFactory?.Invoke();
+                return new SerializedFile(serializedFileHandle, fileHandle, new TypeTreeCache(), byteSource);
             }
             catch
             {

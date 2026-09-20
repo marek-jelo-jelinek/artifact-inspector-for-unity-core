@@ -30,7 +30,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         // not obtained that way (e.g. constructed directly in tests).
         private Action<SerializedFile> _onDisposed;
 
-        internal SerializedFile(SerializedFileHandle handle, FileHandle fileHandle, TypeTreeCache typeTreeCache)
+        internal SerializedFile(SerializedFileHandle handle, FileHandle fileHandle, TypeTreeCache typeTreeCache, IRandomAccessByteSource byteSource = null)
         {
             _handle = handle ?? throw new ArgumentNullException(nameof(handle));
             _fileHandle = fileHandle ?? throw new ArgumentNullException(nameof(fileHandle));
@@ -38,7 +38,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             // Buffered: TypeTreeReader/TypeTreeOffsetWalker read one field/array-length/string-length
             // prefix at a time, and each unbuffered native read against a compressed archive entry
             // can force the native decoder to redo work from the start of the block.
-            _byteSource = new BufferedByteSource(new NativeFileByteSource(fileHandle));
+            _byteSource = byteSource ?? new BufferedByteSource(new NativeFileByteSource(fileHandle));
 
             var infos = _handle.UseHandle((api, h) => api.GetObjectInfos(h));
             _objects = new List<ObjectRef>(infos.Length);

@@ -66,9 +66,9 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           STAGE="artifacts/binaries-stage"
           mkdir -p "$STAGE/netstandard2.0" "$STAGE/net8.0"
-          cp src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/netstandard2.0/Tesearis.ArtifactInspectorForUnity.Core.dll src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/netstandard2.0/Tesearis.ArtifactInspectorForUnity.Core.pdb "$STAGE/netstandard2.0/"
-          cp src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/net8.0/Tesearis.ArtifactInspectorForUnity.Core.dll src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/net8.0/Tesearis.ArtifactInspectorForUnity.Core.pdb "$STAGE/net8.0/"
-          cp LICENSE README.md "$STAGE/"
+          cp src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/netstandard2.0/Tesearis.ArtifactInspectorForUnity.Core.dll src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/netstandard2.0/Tesearis.ArtifactInspectorForUnity.Core.pdb src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/netstandard2.0/Tesearis.ArtifactInspectorForUnity.Core.xml "$STAGE/netstandard2.0/"
+          cp src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/net8.0/Tesearis.ArtifactInspectorForUnity.Core.dll src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/net8.0/Tesearis.ArtifactInspectorForUnity.Core.pdb src/Tesearis.ArtifactInspectorForUnity.Core/bin/Release/net8.0/Tesearis.ArtifactInspectorForUnity.Core.xml "$STAGE/net8.0/"
+          cp LICENSE README.md ThirdPartyNotices.md "$STAGE/"
           (cd "$STAGE" && zip -r "../Tesearis.ArtifactInspectorForUnity.Core-v${VERSION}-binaries.zip" .)
 
       - name: Extract changelog section

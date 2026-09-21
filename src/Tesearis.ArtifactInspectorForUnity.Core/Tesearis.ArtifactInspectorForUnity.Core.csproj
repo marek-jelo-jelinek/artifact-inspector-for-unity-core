@@ -6,7 +6,7 @@
         <ImplicitUsings>disable</ImplicitUsings>
         <RootNamespace>Tesearis.ArtifactInspectorForUnity.Core</RootNamespace>
         <AssemblyName>Tesearis.ArtifactInspectorForUnity.Core</AssemblyName>
-        <Version>1.0.0</Version>
+        <Version>2.0.0</Version>
         <PackageId>Tesearis.ArtifactInspectorForUnity.Core</PackageId>
         <Description>Core .NET library for typed inspection of built Unity artifacts (AssetBundles, Player builds, Addressables output).</Description>
         <Authors>Tesearis</Authors>

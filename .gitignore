@@ -1,6 +1,9 @@
 # .NET build output
 bin/
 obj/
+artifacts/
+*.nupkg
+*.snupkg
 
 # IDE
 .vs/

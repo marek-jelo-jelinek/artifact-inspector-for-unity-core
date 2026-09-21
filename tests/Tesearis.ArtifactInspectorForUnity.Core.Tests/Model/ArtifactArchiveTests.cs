@@ -163,6 +163,52 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Model
         }
 
         [Test]
+        public void OpenRawByteSource_WithAndWithoutArchivePrefix_ReturnsSameCachedInstance()
+        {
+            var api = new FakeUnityFileSystemApi();
+            var archive = CreateArchive(api, ("entry", 10, ArchiveNodeFlags.SerializedFile));
+            var openCallsBefore = api.OpenFileCallCount;
+
+            var bare = archive.OpenRawByteSource("entry");
+            var prefixed = archive.OpenRawByteSource("archive:/entry");
+
+            Assert.That(prefixed, Is.SameAs(bare));
+            Assert.That(api.OpenFileCallCount - openCallsBefore, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void OpenSerializedFile_WithArchivePrefix_ResolvesSameVirtualPathAsBareName()
+        {
+            var api = new FakeUnityFileSystemApi();
+            var capturedPaths = new System.Collections.Generic.List<string>();
+            api.OpenSerializedFileOverride = path =>
+            {
+                capturedPaths.Add(path);
+                return api.NextHandle();
+            };
+            var archive = CreateArchive(api, ("entryA", 10, ArchiveNodeFlags.SerializedFile), ("entryB", 10, ArchiveNodeFlags.SerializedFile));
+
+            archive.OpenSerializedFile("entryA");
+            archive.OpenSerializedFile("archive:/entryA");
+
+            Assert.That(capturedPaths[1], Does.Not.Contain("archive:/archive:/"));
+            Assert.That(capturedPaths[1], Is.EqualTo(capturedPaths[0]));
+        }
+
+        [Test]
+        public void ReadRawEntry_WithAndWithoutArchivePrefix_ReturnsSameBytes()
+        {
+            var api = new FakeUnityFileSystemApi();
+            api.Content = new byte[] { 1, 2, 3, 4, 5 };
+            var archive = CreateArchive(api, ("entry", 5, ArchiveNodeFlags.SerializedFile));
+
+            var bare = archive.ReadRawEntry("entry", 0, 5);
+            var prefixed = archive.ReadRawEntry("archive:/entry", 0, 5);
+
+            Assert.That(prefixed, Is.EqualTo(bare));
+        }
+
+        [Test]
         public void Dispose_AfterSerializedFileAlreadyDisposedItself_DoesNotThrow()
         {
             var api = new FakeUnityFileSystemApi();

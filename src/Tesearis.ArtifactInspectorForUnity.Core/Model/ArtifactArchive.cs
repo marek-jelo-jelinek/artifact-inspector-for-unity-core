@@ -130,6 +130,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             return (_usesBareArchiveRoot == true ? BareArchiveRoot : _mountPoint) + entryName;
         }
 
+        private static string NormalizeEntryName(string entryName)
+        {
+            return entryName.StartsWith(BareArchiveRoot, StringComparison.Ordinal)
+                ? entryName.Substring(BareArchiveRoot.Length)
+                : entryName;
+        }
+
         /// <summary>
         /// Names of the SerializedFile entries in this archive.
         /// </summary>
@@ -159,6 +166,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         public SerializedFile OpenSerializedFile(string entryName)
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+            entryName = NormalizeEntryName(entryName);
 
             return Guarded(() =>
             {
@@ -210,6 +218,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
             if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset must not be negative.");
             if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), size, "Size must not be negative.");
+            entryName = NormalizeEntryName(entryName);
 
             return Guarded(() =>
             {
@@ -228,6 +237,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         public byte[] ReadRawEntry(string entryName)
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+            entryName = NormalizeEntryName(entryName);
 
             return Guarded(() =>
             {
@@ -251,6 +261,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Model
         public IRandomAccessByteSource OpenRawByteSource(string entryName)
         {
             if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+            entryName = NormalizeEntryName(entryName);
 
             return Guarded(() => GetOrOpenByteSource(entryName));
         }

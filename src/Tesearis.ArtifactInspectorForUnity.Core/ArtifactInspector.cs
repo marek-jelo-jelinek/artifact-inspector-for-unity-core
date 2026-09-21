@@ -76,7 +76,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core
                             }
                         }
                     }
-                    catch
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
                     {
                         // Fall back to native file handle stream
                     }

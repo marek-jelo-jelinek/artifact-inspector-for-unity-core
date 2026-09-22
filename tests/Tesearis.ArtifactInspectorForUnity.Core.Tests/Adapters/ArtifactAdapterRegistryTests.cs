@@ -118,6 +118,43 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.Adapters
         }
 
         [Test]
+        public void Adapt_AdapterReadThrowsUnsupportedManagedReferenceShapeException_FallsBackToRawObject()
+        {
+            var (serializedFile, archive, objectRef) = CreateSerializedFileWithOneObject();
+            var adapter = new StubArtifactAdapter
+            {
+                MatchesFunc = _ => true,
+                ReadFunc = _ => throw new UnsupportedManagedReferenceShapeException("m_Field", "MyType")
+            };
+            var registry = new ArtifactAdapterRegistry().Register(adapter);
+
+            var result = registry.Adapt(objectRef, serializedFile, archive);
+
+            Assert.That(result, Is.InstanceOf<RawObject>());
+            var raw = (RawObject)result;
+            Assert.That(raw.ObjectRef.PathId, Is.EqualTo(objectRef.PathId));
+            Assert.That(raw.ClassName, Is.EqualTo("GameObject"));
+        }
+
+        [Test]
+        public void Adapt_AdapterMatchesThrowsUnsupportedManagedReferenceShapeException_FallsBackToRawObject()
+        {
+            var (serializedFile, archive, objectRef) = CreateSerializedFileWithOneObject();
+            var adapter = new StubArtifactAdapter
+            {
+                MatchesFunc = _ => throw new UnsupportedManagedReferenceShapeException("m_Field", "MyType"),
+            };
+            var registry = new ArtifactAdapterRegistry().Register(adapter);
+
+            var result = registry.Adapt(objectRef, serializedFile, archive);
+
+            Assert.That(result, Is.InstanceOf<RawObject>());
+            var raw = (RawObject)result;
+            Assert.That(raw.ObjectRef.PathId, Is.EqualTo(objectRef.PathId));
+            Assert.That(raw.ClassName, Is.EqualTo("GameObject"));
+        }
+
+        [Test]
         public void Inspect_SerializedFile_DispatchesEveryObjectThroughTheRegistry()
         {
             var (serializedFile, archive, _) = CreateSerializedFileWithOneObject();

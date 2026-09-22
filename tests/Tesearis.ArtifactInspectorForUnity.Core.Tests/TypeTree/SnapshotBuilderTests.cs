@@ -1,4 +1,5 @@
 using System;
+using Tesearis.ArtifactInspectorForUnity.Core.Native;
 using Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
 using NUnit.Framework;
@@ -283,6 +284,18 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.That(field.ArrayLength(), Is.EqualTo(elementCount));
             Assert.That(field.ByteSize, Is.EqualTo(4L + (long)elementCount * 12));
             Assert.That(field.Element(500).Field("indexCount").AsInt32(), Is.EqualTo(500 * 20));
+        }
+
+        [Test]
+        public void Build_UnwrappedString_ArrayLengthAndElement_ThrowsArtifactInspectorException()
+        {
+            // Unwrapped bare string node has no children and IsArrayLike is false
+            var node = new TypeTreeNode("m_Name", "string", -1, TypeTreeFlags.None, TypeTreeMetaFlags.None, []);
+            var buffer = new ByteBufferWriter().WriteString("test").ToArray();
+            var field = SnapshotBuilder.Build(node, 0, new InMemoryByteSource(buffer), MaterializeOptions.Default);
+
+            Assert.Throws<ArtifactInspectorException>(() => field.ArrayLength());
+            Assert.Throws<ArtifactInspectorException>(() => field.Element(0));
         }
     }
 }

@@ -104,6 +104,22 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TypeTree
             Assert.That(scriptA, Is.Not.SameAs(scriptB));
         }
 
+        [Test]
+        public void GetOrBuild_NegativeTypeId_WalksNativeTypeTreeOncePerObject()
+        {
+            var (handle, api) = BuildChain(chainLength: 3);
+            var cache = new TypeTreeCache();
+
+            const int objectCount = 10;
+            const int undefinedTypeId = -1;
+            for (long objectId = 0; objectId < objectCount; objectId++)
+            {
+                cache.GetOrBuild(handle, objectId, undefinedTypeId);
+            }
+
+            Assert.That(api.GetTypeTreeCallCount, Is.EqualTo(objectCount));
+        }
+
         /// <summary>Builds a fake type tree that's a straight chain of chainLength nested struct wrappers around one leaf int.</summary>
         private static (SerializedFileHandle handle, FakeUnityFileSystemApi api) BuildChain(int chainLength)
         {

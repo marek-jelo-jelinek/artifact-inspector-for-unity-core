@@ -31,6 +31,11 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Adapters
         /// </summary>
         public ObjectSnapshot Snapshot(MaterializeOptions options = null)
         {
+            if (SerializedFile == null)
+            {
+                throw new InvalidOperationException("Cannot build a snapshot without an owning SerializedFile.");
+            }
+
             return SerializedFile.GetOrBuildSnapshotForRef(ObjectRef, options);
         }
     }

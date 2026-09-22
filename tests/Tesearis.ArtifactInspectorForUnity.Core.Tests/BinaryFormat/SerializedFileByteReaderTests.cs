@@ -81,70 +81,86 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.BinaryFormat
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_HappyPath_ReadsStringAndAdvancesPastTerminator()
+        public void ReadNullTerminatedUtf8String_HappyPath_ReadsStringAndAdvancesPastTerminator()
         {
             var buffer = new ByteBufferWriter().WriteNullTerminatedString("hi").WriteByte(0x99).ToArray();
             var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
 
-            Assert.That(reader.ReadNullTerminatedAsciiString(), Is.EqualTo("hi"));
+            Assert.That(reader.ReadNullTerminatedUtf8String(), Is.EqualTo("hi"));
             Assert.That(reader.ReadByte(), Is.EqualTo(0x99)); // proves the cursor stopped right after the terminator
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_EmptyString_ReturnsEmpty()
+        public void ReadNullTerminatedUtf8String_EmptyString_ReturnsEmpty()
         {
             var buffer = new ByteBufferWriter().WriteNullTerminatedString("").ToArray();
             var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
 
-            Assert.That(reader.ReadNullTerminatedAsciiString(), Is.EqualTo(""));
+            Assert.That(reader.ReadNullTerminatedUtf8String(), Is.EqualTo(""));
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_NoTerminatorBeforeEndOfSource_Throws()
+        public void ReadNullTerminatedUtf8String_MultibyteUtf8_DecodesCorrectly()
+        {
+            var text = "Path/to/résumé/日本語/🎉";
+            var utf8Bytes = System.Text.Encoding.UTF8.GetBytes(text);
+            var buffer = new byte[utf8Bytes.Length + 2];
+            System.Array.Copy(utf8Bytes, buffer, utf8Bytes.Length);
+            buffer[utf8Bytes.Length] = 0;
+            buffer[utf8Bytes.Length + 1] = 0xAA;
+
+            var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
+
+            Assert.That(reader.ReadNullTerminatedUtf8String(), Is.EqualTo(text));
+            Assert.That(reader.ReadByte(), Is.EqualTo(0xAA));
+        }
+
+        [Test]
+        public void ReadNullTerminatedUtf8String_NoTerminatorBeforeEndOfSource_Throws()
         {
             var buffer = new byte[] { (byte)'a', (byte)'b', (byte)'c' }; // no 0x00 anywhere
             var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
 
-            Assert.Throws<ArtifactInspectorException>(() => reader.ReadNullTerminatedAsciiString());
+            Assert.Throws<ArtifactInspectorException>(() => reader.ReadNullTerminatedUtf8String());
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_LongStringAcrossChunkBoundary_ReadsCorrectly()
+        public void ReadNullTerminatedUtf8String_LongStringAcrossChunkBoundary_ReadsCorrectly()
         {
             var longString = new string('x', 150);
             var buffer = new ByteBufferWriter().WriteNullTerminatedString(longString).WriteByte(0x42).ToArray();
             var reader = new SerializedFileByteReader(new InMemoryByteSource(buffer), 0, swap: false);
 
-            Assert.That(reader.ReadNullTerminatedAsciiString(), Is.EqualTo(longString));
+            Assert.That(reader.ReadNullTerminatedUtf8String(), Is.EqualTo(longString));
             Assert.That(reader.ReadByte(), Is.EqualTo(0x42));
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_TerminatorAtChunkBoundary_ReadsCorrectly()
+        public void ReadNullTerminatedUtf8String_TerminatorAtChunkBoundary_ReadsCorrectly()
         {
             // 63 chars + '\0' fits exactly in a 64-byte chunk
             var str63 = new string('a', 63);
             var buffer63 = new ByteBufferWriter().WriteNullTerminatedString(str63).WriteByte(0x11).ToArray();
             var reader63 = new SerializedFileByteReader(new InMemoryByteSource(buffer63), 0, swap: false);
-            Assert.That(reader63.ReadNullTerminatedAsciiString(), Is.EqualTo(str63));
+            Assert.That(reader63.ReadNullTerminatedUtf8String(), Is.EqualTo(str63));
             Assert.That(reader63.ReadByte(), Is.EqualTo(0x11));
 
             // 64 chars fills the chunk, '\0' is at index 0 of next chunk
             var str64 = new string('b', 64);
             var buffer64 = new ByteBufferWriter().WriteNullTerminatedString(str64).WriteByte(0x22).ToArray();
             var reader64 = new SerializedFileByteReader(new InMemoryByteSource(buffer64), 0, swap: false);
-            Assert.That(reader64.ReadNullTerminatedAsciiString(), Is.EqualTo(str64));
+            Assert.That(reader64.ReadNullTerminatedUtf8String(), Is.EqualTo(str64));
             Assert.That(reader64.ReadByte(), Is.EqualTo(0x22));
         }
 
         [Test]
-        public void ReadNullTerminatedAsciiString_LongUnterminatedStringAcrossChunks_Throws()
+        public void ReadNullTerminatedUtf8String_LongUnterminatedStringAcrossChunks_Throws()
         {
             var bytes = new byte[150];
             for (var i = 0; i < bytes.Length; i++) bytes[i] = (byte)'a';
             var reader = new SerializedFileByteReader(new InMemoryByteSource(bytes), 0, swap: false);
 
-            Assert.Throws<ArtifactInspectorException>(() => reader.ReadNullTerminatedAsciiString());
+            Assert.Throws<ArtifactInspectorException>(() => reader.ReadNullTerminatedUtf8String());
         }
 
         [Test]

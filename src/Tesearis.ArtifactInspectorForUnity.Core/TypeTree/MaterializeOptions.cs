@@ -15,7 +15,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
         /// reference arrays, while excluding mesh/texture/audio-scale payloads and unusually long strings/
         /// arrays -- not a value measured against real content, worth tuning if it doesn't hold up.
         /// </summary>
-        public static MaterializeOptions Default { get; } = new();
+        public static MaterializeOptions Default => new();
 
         /// <summary>
         /// The largest byte size (any length prefix excluded) a single string/byte-blob/array field may have

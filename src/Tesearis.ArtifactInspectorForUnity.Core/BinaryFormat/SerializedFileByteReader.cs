@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Tesearis.ArtifactInspectorForUnity.Core.TypeTree;
 
@@ -15,7 +16,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
         private readonly IRandomAccessByteSource _source;
         private readonly bool _swap;
         private readonly byte[] _primitiveBuffer = new byte[8];
-        private readonly byte[] _asciiBuffer = new byte[64];
+        private readonly byte[] _utf8Buffer = new byte[64];
 
         internal SerializedFileByteReader(IRandomAccessByteSource source, long startPosition, bool swap)
         {
@@ -70,10 +71,10 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
             return _swap ? EndianUtility.SwapUInt64(value) : value;
         }
 
-        /// <summary>Reads a null-terminated ASCII string, advancing past the terminator.</summary>
-        internal string ReadNullTerminatedAsciiString()
+        /// <summary>Reads a null-terminated UTF-8 string, advancing past the terminator.</summary>
+        internal string ReadNullTerminatedUtf8String()
         {
-            var sb = new StringBuilder();
+            List<byte> bytes = null;
             while (true)
             {
                 var remaining = _source.Length - Position;
@@ -83,34 +84,35 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.BinaryFormat
                         "Unexpected end of data while reading 1 byte(s) at offset " + Position + ".");
                 }
 
-                var toRead = (int)Math.Min(_asciiBuffer.Length, remaining);
-                var read = _source.Read(Position, _asciiBuffer, 0, toRead);
+                var toRead = (int)Math.Min(_utf8Buffer.Length, remaining);
+                var read = _source.Read(Position, _utf8Buffer, 0, toRead);
                 if (read <= 0)
                 {
                     throw new ArtifactInspectorException(
                         "Unexpected end of data while reading 1 byte(s) at offset " + Position + ".");
                 }
 
-                var nullIndex = Array.IndexOf(_asciiBuffer, (byte)0, 0, read);
+                var nullIndex = Array.IndexOf(_utf8Buffer, (byte)0, 0, read);
                 if (nullIndex >= 0)
                 {
                     Position += nullIndex + 1;
-                    if (nullIndex == 0 && sb.Length == 0)
+                    if (bytes == null)
                     {
-                        return string.Empty;
+                        return nullIndex == 0 ? string.Empty : Encoding.UTF8.GetString(_utf8Buffer, 0, nullIndex);
                     }
 
                     for (var i = 0; i < nullIndex; i++)
                     {
-                        sb.Append((char)_asciiBuffer[i]);
+                        bytes.Add(_utf8Buffer[i]);
                     }
 
-                    return sb.ToString();
+                    return Encoding.UTF8.GetString(bytes.ToArray());
                 }
 
+                bytes ??= new List<byte>();
                 for (var i = 0; i < read; i++)
                 {
-                    sb.Append((char)_asciiBuffer[i]);
+                    bytes.Add(_utf8Buffer[i]);
                 }
 
                 Position += read;

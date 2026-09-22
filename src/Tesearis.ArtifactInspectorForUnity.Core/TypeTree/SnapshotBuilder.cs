@@ -107,7 +107,7 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
                 return BuildByteLikePayload(node, offset, byteSource, options, count);
             }
 
-            if (TypeTreeOffsetWalker.TryGetConstantElementSize(elementTemplate, out var constantElementSize))
+            if (elementTemplate.TryGetConstantByteSize(out var constantElementSize))
             {
                 var stride = elementTemplate.IsAligned ? (constantElementSize + 3) & ~3L : constantElementSize;
                 var totalDataBytes = count * stride;
@@ -121,7 +121,13 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.TypeTree
 
                 if (isFixedLeafElement)
                 {
-                    var bulk = new byte[count * elementTemplate.ByteSize];
+                    var bulkByteCount = (long)count * elementTemplate.ByteSize;
+                    if (bulkByteCount > int.MaxValue)
+                    {
+                        return SnapshotField.Deferred(node, byteSource, offset, totalSize);
+                    }
+
+                    var bulk = new byte[(int)bulkByteCount];
                     if (bulk.Length > 0)
                     {
                         var read = byteSource.Read(offset + 4, bulk, 0, bulk.Length);

@@ -52,7 +52,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Tests.TestSupport
         public void UnmountArchive(IntPtr archiveHandle) => UnmountedArchiveHandles.Add(archiveHandle);
         public int GetArchiveNodeCount(IntPtr archiveHandle) => ArchiveNodes.Count;
         public ArchiveNode GetArchiveNode(IntPtr archiveHandle, int index) => ArchiveNodes[index];
-        public IntPtr OpenFile(string virtualPath) => OpenFileOverride != null ? OpenFileOverride(virtualPath) : NextHandle();
+        public int OpenFileCallCount { get; private set; }
+        public IntPtr OpenFile(string virtualPath)
+        {
+            OpenFileCallCount++;
+            return OpenFileOverride != null ? OpenFileOverride(virtualPath) : NextHandle();
+        }
 
         /// <summary>Backing bytes for <see cref="ReadFile"/>/<see cref="GetFileSize"/>. Empty by default,
         /// matching every other test's assumption of a contentless fake file; set it when a test needs

@@ -4,13 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.0] - 2026-09-20
 
 ### Changed
 
 - **Breaking:** `SerializedFileDetector.IsMissingTypeTrees` / `YamlSerializedFileDetector.IsYamlSerializedFile` now throw on invalid paths instead of returning `false`.
 - **Breaking:** `ExternalReferenceType` moved from `Native` to `Model` namespace.
+- **Breaking:** `StreamingInfo.Offset`/`Size` widened from `ulong`/`uint` to `long`, matching the rest of Core's offset/size types; added `ReadBytes(ArtifactArchive)` and `OpenByteSource(ArtifactArchive)` helpers for resolving the described payload directly.
 - `TypeTreeNode` no longer throws eagerly for unsupported `[SerializeReference]` shapes; the error is now deferred until that field is read.
+- Performance: Whole-entry in-memory buffering for serialized files <= 64 MiB (`InMemoryByteSource`), eliminating thousands of native seek/read P/Invoke round-trips and decompressor thrashing.
+- Performance: Zero temporary allocations for scalar reads in `SerializedFileByteReader`, `SnapshotField`, and `TypeTreeReader`.
+- Performance: Memoized constant byte size lookups (`TypeTreeNode.TryGetConstantByteSize`) used across `TypeTreeOffsetWalker`, `SnapshotBuilder`, and `TypeTreeReader`.
 
 ### Added
 
@@ -21,12 +25,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `ObjectRef.Snapshot()` / `SerializedFile.TryGetSnapshot()`: caches an object's decoded fields (`ObjectSnapshot`/`SnapshotField`) keyed by PathId, so repeated lookups of the same object -- e.g. several sibling components resolving their owning GameObject's name -- pay one type-tree walk instead of one per lookup. Fields larger than `MaterializeOptions.MaxInlineFieldSizeBytes` (1024 bytes by default) stay deferred/lazy, same as `TypeTreeReader` already makes them.
 - `SerializedFile.MaterializeAll(options)`: eagerly snapshots every (optionally `TypeIdFilter`ed) object, sorted by byte offset, for a consumer that knows upfront it will touch most/all objects in a file. Opt-in only -- opening a file never materializes anything automatically.
 - `PPtr.TryResolveSnapshot()`: resolves a local reference straight to a cached `ObjectSnapshot`.
+- `ObjectRef`, `ExternalReference`, and `PPtr` now implement `IEquatable<T>` and support `==` and `!=` operator comparisons.
 
 ### Fixed
 
 - Deeply nested type trees (>64 levels) now throw instead of risking a stack overflow.
 - `ArtifactArchive` now detects and works around a native mount-path resolution quirk affecting some Unity Editor builds.
 - `TypeTreeCache` no longer re-walks a full native type tree per object; objects of the same ClassID (every type except MonoBehaviour, whose type tree varies per script) now share one cached walk, eliminating an O(object count) native-call cost that dominated large-scene scans.
+- `SerializedFileOpener` avoids opening redundant native file handles when in-memory byte sources are active.
+- `ObjectRef.GetReader()` and `ObjectRef.Snapshot()` on uninitialized `default(ObjectRef)` instances now throw a clear `InvalidOperationException` instead of `NullReferenceException`.
+- `InMemoryByteSource` now validates that read offset is not negative, throwing `ArgumentOutOfRangeException`.
+- `ArtifactArchive.OpenSerializedFile`/`ReadRawEntry`/`OpenRawByteSource` now accept entry names with or without the `archive:/` prefix, resolving and caching both forms identically instead of doubling the prefix when a caller passes an already-prefixed streamed-asset path.
 
 ## [1.0.0] - 2026-08-30
 

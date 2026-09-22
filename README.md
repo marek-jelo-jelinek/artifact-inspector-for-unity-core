@@ -233,8 +233,8 @@ public sealed class Texture2DAdapter : ArtifactAdapter<Texture2DInfo>
         var reader = context.Reader;
         var streamData = reader.Field("m_StreamData");
         var streaming = new StreamingInfo(
-            streamData.Field("offset").AsUInt64(),
-            streamData.Field("size").AsUInt32(),
+            streamData.Field("offset").AsInt64(),
+            streamData.Field("size").AsInt32(),
             streamData.Field("path").AsString());
 
         return new Texture2DInfo(reader.Field("m_Name").AsString(), streaming);
@@ -244,9 +244,7 @@ public sealed class Texture2DAdapter : ArtifactAdapter<Texture2DInfo>
 // Caller resolves the streamed bytes through the same archive the object came from:
 if (!string.IsNullOrEmpty(info.Streaming.Path))
 {
-    using var streamSource = context.Archive.OpenRawByteSource(info.Streaming.Path);
-    var pixelBytes = new byte[info.Streaming.Size];
-    streamSource.Read((long)info.Streaming.Offset, pixelBytes, 0, pixelBytes.Length);
+    var pixelBytes = info.Streaming.ReadBytes(context.Archive);
 }
 ```
 
@@ -262,7 +260,7 @@ Quick reference; see the examples above for usage, and each type's XML doc comme
 - `TypeTreeReader`, `TypeTreeNode`, `TypeTreeSummary`: lazy, random access field reading.
 - `ObjectSnapshot`, `SnapshotField`, `MaterializeOptions`, `MaterializeResult`: cached, mostly-eager field decoding for repeated/cross-object lookups, see [Repeated and cross-object field lookups](#repeated-and-cross-object-field-lookups-snapshots) above.
 - `ArtifactAdapterRegistry`, `IArtifactAdapter`, `ArtifactAdapter<T>`, `ArtifactAdapterContext`, `RawObject`: the adapter mechanism, see [Custom adapters](#custom-adapters) above.
-- `StreamingInfo`: describes an out-of-line payload (offset/size/path) for adapters covering streamed asset types, see [Streamed data](#streamed-data) above.
+- `StreamingInfo`: describes an out-of-line payload (offset/size/path) for adapters covering streamed asset types, with `ReadBytes`/`OpenByteSource` helpers for resolving the payload through an `ArtifactArchive`, see [Streamed data](#streamed-data) above.
 - `BinaryFormat.SerializedFileDetector`, `SerializedFileInfo`, `StrippedObjectInfo`, `TypeIdRegistry`, `YamlSerializedFileDetector`: stripped file (no TypeTree) support, see [Stripped files](#stripped-files-no-typetree) below.
 - `ArtifactInspectorException`, `NativeCallException`, `SerializedFileOpenException`, `NativeFeatureNotSupportedException`, `UnsupportedManagedReferenceShapeException`: the exception hierarchy, see [Exceptions](#exceptions) below.
 

@@ -29,6 +29,12 @@ namespace Tesearis.ArtifactInspectorForUnity.Core.Native
 
         public int Read(long offset, byte[] buffer, int bufferOffset, int count)
         {
+            if (buffer == null) throw new ArgumentNullException(nameof(buffer));
+            if (bufferOffset < 0) throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset must not be negative.");
+            if (count < 0) throw new ArgumentOutOfRangeException(nameof(count), count, "Count must not be negative.");
+            if (buffer.Length - bufferOffset < count) throw new ArgumentException("Buffer is too small for the requested count.", nameof(buffer));
+            if (count == 0) return 0;
+
             lock (_lock)
             {
                 // Seek + read happen inside one UseHandle scope so a concurrent Dispose() can't
